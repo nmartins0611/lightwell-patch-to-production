@@ -80,6 +80,12 @@
           recommended_action: "Apply compensating controls (CME mitigation)"
           timestamp: "{{ ansible_date_time.iso8601 }}"
 
+    - name: Ensure report output directory exists
+      ansible.builtin.file:
+        path: "{{ report_output_dir }}"
+        state: directory
+        mode: "0750"
+
     - name: Write exposure report
       ansible.builtin.copy:
         content: "{{ exposure_report | to_nice_json }}"

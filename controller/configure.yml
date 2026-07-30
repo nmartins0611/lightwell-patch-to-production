@@ -208,7 +208,7 @@
         identifier: "mitigate"
         unified_job_template: "Demo — CME Mitigate"
         success_nodes:
-          - identifier: "correlate"
+          - "correlate"
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
@@ -219,7 +219,7 @@
         identifier: "verify"
         unified_job_template: "Demo — CME Verify"
         success_nodes:
-          - identifier: "mitigate"
+          - "mitigate"
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
@@ -241,7 +241,7 @@
         identifier: "patch"
         unified_job_template: "Demo — Patch and Verify"
         success_nodes:
-          - identifier: "container_test"
+          - "container_test"
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
@@ -252,7 +252,7 @@
         identifier: "close_loop"
         unified_job_template: "Demo — Close Loop"
         success_nodes:
-          - identifier: "patch"
+          - "patch"
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"

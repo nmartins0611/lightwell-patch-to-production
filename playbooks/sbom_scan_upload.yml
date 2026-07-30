@@ -10,7 +10,7 @@
   hosts: targets
   gather_facts: true
   vars:
-    sbom_format: "cyclonedx-json"
+    sbom_format: "cyclonedx-json@1.6"
     sbom_output: "{{ sbom_output_dir }}/{{ inventory_hostname }}-sbom.json"
 
   tasks:
@@ -20,12 +20,12 @@
         state: directory
         mode: "0750"
 
-    - name: Run Syft SBOM scan on filesystem
+    - name: Run Syft SBOM scan (Python packages)
       ansible.builtin.command:
         cmd: >-
-          syft packages dir:/ --output {{ sbom_format }}
-          --file {{ sbom_output }}
-          --exclude /proc --exclude /sys --exclude /dev
+          syft scan dir:/usr/lib64/python3.9
+          --source-name {{ inventory_hostname }}
+          --output {{ sbom_format }}={{ sbom_output }}
       changed_when: true
 
     - name: Fetch SBOM to controller
@@ -72,6 +72,7 @@
           Accept: "application/json"
           Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200, 201, 202]
+        timeout: 120
       loop: "{{ sbom_files.files }}"
       loop_control:
         label: "{{ item.path | basename }}"
