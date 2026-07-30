@@ -16,6 +16,19 @@
     postpatch_sbom_dir: "{{ sbom_output_dir }}/postpatch"
 
   tasks:
+    - name: Acquire OIDC token from Keycloak
+      ansible.builtin.uri:
+        url: "{{ rhtpa_keycloak_url }}/realms/{{ rhtpa_keycloak_realm }}/protocol/openid-connect/token"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          client_id: "{{ rhtpa_oidc_client_id }}"
+          client_secret: "{{ rhtpa_oidc_client_secret }}"
+          grant_type: "client_credentials"
+          scope: "openid create:document read:document"
+        status_code: [200]
+      register: token_response
+
     - name: Find post-patch SBOMs
       ansible.builtin.find:
         paths: "{{ postpatch_sbom_dir }}"
@@ -25,12 +38,13 @@
 
     - name: Upload fresh SBOMs to RHTPA (inventory is now current)
       ansible.builtin.uri:
-        url: "{{ rhtpa_bombastic_endpoint }}"
+        url: "{{ rhtpa_sbom_endpoint }}"
         method: POST
         src: "{{ item.path }}"
         headers:
           Content-Type: "application/json"
           Accept: "application/json"
+          Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200, 201, 202]
       loop: "{{ postpatch_sboms.files }}"
       loop_control:
@@ -38,10 +52,11 @@
 
     - name: Confirm CVE no longer appears in RHTPA correlation
       ansible.builtin.uri:
-        url: "{{ rhtpa_api_endpoint }}/api/v1/vulnerability?id={{ cve_id }}"
+        url: "{{ rhtpa_api_endpoint }}/api/v2/vulnerability?q={{ cve_id }}"
         method: GET
         headers:
           Accept: "application/json"
+          Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200]
       register: rhtpa_verify
 

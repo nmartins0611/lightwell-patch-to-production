@@ -1,0 +1,23 @@
+---
+demo_cve_id: "CVE-2026-51234"
+demo_cve_package: "python-cryptography"
+demo_cve_vulnerable_version: "36.0.1-5.el9_6"
+demo_cve_fixed_version: "36.0.1-6.el9_6"
+demo_advisory_id: "RHSA-2026:4521"
+demo_cvss_vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H"
+demo_cwe_ids:
+  - "CWE-119"
+  - "CWE-787"
+
+rhtpa_api_endpoint: "http://{{ hostvars['node2']['ansible_host'] }}:8443"
+rhtpa_sbom_endpoint: "{{ rhtpa_api_endpoint }}/api/v2/sbom"
+rhtpa_vex_endpoint: "{{ rhtpa_api_endpoint }}/api/v2/vex"
+rhtpa_keycloak_url: "http://{{ hostvars['node2']['ansible_host'] }}:8180"
+rhtpa_keycloak_realm: "trustification"
+rhtpa_oidc_client_id: "walker"
+rhtpa_oidc_client_secret: "service-secret-2026"
+
+eda_webhook_port: 5000
+
+sbom_output_dir: "/tmp/sbom-artifacts"
+report_output_dir: "/tmp/demo-reports"

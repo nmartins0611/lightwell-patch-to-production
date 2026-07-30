@@ -1,0 +1,72 @@
+---
+# Setup: Deploy Keycloak OIDC provider for RHTPA
+#
+# Deploys Keycloak as a container and configures a realm with clients
+# for the RHTPA integration.
+
+- name: "Setup — Deploy Keycloak for RHTPA OIDC"
+  hosts: builders
+  gather_facts: false
+  vars:
+    keycloak_image: "quay.io/keycloak/keycloak:26.0"
+    keycloak_admin_user: "admin"
+    keycloak_admin_password: "admin"
+    keycloak_port: 8180
+    keycloak_container_name: "keycloak"
+    keycloak_network: "tcnet"
+    keycloak_realm: "trustification"
+    keycloak_frontend_client: "frontend"
+    keycloak_service_client: "walker"
+    keycloak_service_secret: "service-secret-2026"
+
+  tasks:
+    - name: Check if Keycloak is already running
+      containers.podman.podman_container_info:
+        name: "{{ keycloak_container_name }}"
+      register: kc_info
+      ignore_errors: true
+
+    - name: Deploy Keycloak container
+      containers.podman.podman_container:
+        name: "{{ keycloak_container_name }}"
+        image: "{{ keycloak_image }}"
+        state: started
+        recreate: "{{ kc_info.containers | default([]) | length == 0 }}"
+        network: "{{ keycloak_network }}"
+        ports:
+          - "{{ keycloak_port }}:8080"
+        env:
+          KC_BOOTSTRAP_ADMIN_USERNAME: "{{ keycloak_admin_user }}"
+          KC_BOOTSTRAP_ADMIN_PASSWORD: "{{ keycloak_admin_password }}"
+          KC_HOSTNAME: "http://{{ keycloak_container_name }}:8080"
+          KC_HOSTNAME_STRICT: "false"
+          KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+        command: start-dev
+      register: kc_container
+
+    - name: Wait for Keycloak to become ready
+      ansible.builtin.uri:
+        url: "http://localhost:{{ keycloak_port }}/realms/master/.well-known/openid-configuration"
+        method: GET
+        status_code: [200]
+      register: kc_health
+      retries: 30
+      delay: 10
+      until: kc_health.status == 200
+
+    - name: Run realm and client configuration script
+      ansible.builtin.script: keycloak_setup.sh
+      register: kc_setup
+
+    - name: Run client scopes configuration
+      ansible.builtin.script: keycloak_scopes.sh
+      register: kc_scopes
+
+    - name: Display configuration result
+      ansible.builtin.debug:
+        msg: |
+          Keycloak deployed and configured:
+            Admin console: http://{{ ansible_host }}:{{ keycloak_port }}
+            OIDC Issuer: http://{{ keycloak_container_name }}:8080/realms/{{ keycloak_realm }}
+            Frontend client: {{ keycloak_frontend_client }} (public)
+            Service client: {{ keycloak_service_client }} (secret: {{ keycloak_service_secret }})

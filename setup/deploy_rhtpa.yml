@@ -1,55 +1,181 @@
 ---
 # Setup: Deploy RHTPA on Node 2
 #
-# Uses the redhat.trusted_profile_analyzer collection to deploy the
-# full RHTPA stack as containers via podman kube play.
-#
-# Run this once during demo environment provisioning.
+# Deploys the RHTPA server with PostgreSQL backend and Keycloak OIDC.
+# Requires Keycloak to be deployed first (deploy_keycloak.yml).
 
 - name: "Setup — Deploy Red Hat Trusted Profile Analyzer"
   hosts: builders
-  become: true
-  gather_facts: true
+  gather_facts: false
+  vars:
+    rhtpa_image: "registry.redhat.io/rhtpa/rhtpa-trustification-service-rhel9:b56c0e43a5a9d8880400507a54bd1c4e9f31dc88"
+    rhtpa_network: "tcnet"
+    rhtpa_api_port: 8443
+    rhtpa_infra_port: 9010
+    pg_image: "docker.io/library/postgres:16-alpine"
+    pg_container_name: "rhtpa-db"
+    pg_admin_password: "demo-admin-2026"
+    pg_db_name: "trustify"
+    pg_db_user: "trustify"
+    pg_db_password: "demo-user-2026"
+    keycloak_container_name: "keycloak"
+    keycloak_realm: "trustification"
+    keycloak_issuer_url: "http://{{ keycloak_container_name }}:8080/realms/{{ keycloak_realm }}"
 
-  pre_tasks:
+  tasks:
     - name: Ensure podman is installed
       ansible.builtin.dnf:
         name:
           - podman
           - podman-plugins
         state: present
-
-    - name: Ensure podman socket is active
-      ansible.builtin.systemd:
-        name: podman.socket
-        state: started
-        enabled: true
+      become: true
 
     - name: Login to registry.redhat.io
       containers.podman.podman_login:
         registry: registry.redhat.io
         username: "{{ vault_registry_username }}"
         password: "{{ vault_registry_password }}"
+      become: true
 
-  roles:
-    - role: redhat.trusted_profile_analyzer.tpa_single_node
-      vars:
-        tpa_single_node_rhel_host: "{{ inventory_hostname }}"
+    - name: Deploy PostgreSQL container
+      containers.podman.podman_container:
+        name: "{{ pg_container_name }}"
+        image: "{{ pg_image }}"
+        state: started
+        network: "{{ rhtpa_network }}"
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: "{{ pg_admin_password }}"
+          POSTGRES_DB: "{{ pg_db_name }}"
+        volumes:
+          - "rhtpa-pgdata:/var/lib/postgresql/data"
 
-  post_tasks:
+    - name: Wait for PostgreSQL to be ready
+      ansible.builtin.command:
+        cmd: podman exec {{ pg_container_name }} pg_isready -U postgres
+      register: pg_ready
+      retries: 10
+      delay: 3
+      until: pg_ready.rc == 0
+      changed_when: false
+
+    - name: Create application database user
+      ansible.builtin.command:
+        cmd: >-
+          podman exec {{ pg_container_name }} psql -U postgres -c
+          "DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ pg_db_user }}') THEN
+              CREATE ROLE {{ pg_db_user }} WITH LOGIN PASSWORD '{{ pg_db_password }}';
+            END IF;
+          END $$;"
+      changed_when: false
+
+    - name: Grant database privileges
+      ansible.builtin.command:
+        cmd: >-
+          podman exec {{ pg_container_name }} psql -U postgres -c
+          "GRANT ALL PRIVILEGES ON DATABASE {{ pg_db_name }} TO {{ pg_db_user }};"
+      changed_when: false
+
+    - name: Grant schema privileges
+      ansible.builtin.command:
+        cmd: >-
+          podman exec {{ pg_container_name }} psql -U postgres -d {{ pg_db_name }} -c
+          "GRANT ALL ON SCHEMA public TO {{ pg_db_user }};"
+      changed_when: false
+
+    - name: Run RHTPA database migrations
+      containers.podman.podman_container:
+        name: rhtpa-migrate
+        image: "{{ rhtpa_image }}"
+        state: started
+        rm: true
+        network: "{{ rhtpa_network }}"
+        env:
+          TRUSTD_DB_HOST: "{{ pg_container_name }}"
+          TRUSTD_DB_PORT: "5432"
+          TRUSTD_DB_NAME: "{{ pg_db_name }}"
+          TRUSTD_DB_USER: "{{ pg_db_user }}"
+          TRUSTD_DB_PASSWORD: "{{ pg_db_password }}"
+          TRUSTD_DB_SSLMODE: "disable"
+        command: "db migrate"
+      register: migrate_result
+
+    - name: Write RHTPA auth configuration
+      ansible.builtin.copy:
+        content: |
+          authentication:
+            clients:
+              - clientId: frontend
+                issuerUrl: {{ keycloak_issuer_url }}
+                scopeMappings: &keycloakScopeMappings
+                  "create:document": [ "create.advisory", "create.importer", "create.metadata", "create.sbom", "create.weakness", "upload.dataset" ]
+                  "read:document": [ "ai", "read.advisory", "read.importer", "read.metadata", "read.sbom", "read.weakness", "read.systemInformation" ]
+                  "update:document": [ "update.advisory", "update.importer", "update.metadata", "update.sbom", "update.weakness" ]
+                  "delete:document": [ "delete.advisory", "delete.importer", "delete.metadata", "delete.sbom", "delete.vulnerability", "delete.weakness" ]
+              - clientId: walker
+                issuerUrl: {{ keycloak_issuer_url }}
+                scopeMappings: *keycloakScopeMappings
+        dest: /tmp/rhtpa-config/auth.yaml
+        mode: "0644"
+
+    - name: Ensure RHTPA config directory exists
+      ansible.builtin.file:
+        path: /tmp/rhtpa-config
+        state: directory
+        mode: "0755"
+
+    - name: Deploy RHTPA server container
+      containers.podman.podman_container:
+        name: rhtpa-server
+        image: "{{ rhtpa_image }}"
+        state: started
+        recreate: true
+        network: "{{ rhtpa_network }}"
+        ports:
+          - "{{ rhtpa_infra_port }}:9010"
+          - "{{ rhtpa_api_port }}:8080"
+        volumes:
+          - "/tmp/rhtpa-config/auth.yaml:/etc/config/auth.yaml:ro,Z"
+          - "storage:/data/storage:Z"
+        env:
+          NAMESPACE: "trustification"
+          RUST_LOG: "info"
+          INFRASTRUCTURE_ENABLED: "true"
+          INFRASTRUCTURE_BIND: "[::]:9010"
+          HTTP_SERVER_BIND_ADDR: "::"
+          HTTP_SERVER_TLS_ENABLED: "false"
+          TRUSTD_DB_HOST: "{{ pg_container_name }}"
+          TRUSTD_DB_PORT: "5432"
+          TRUSTD_DB_NAME: "{{ pg_db_name }}"
+          TRUSTD_DB_USER: "{{ pg_db_user }}"
+          TRUSTD_DB_PASSWORD: "{{ pg_db_password }}"
+          TRUSTD_DB_SSLMODE: "disable"
+          TRUSTD_STORAGE_STRATEGY: "fs"
+          TRUSTD_STORAGE_FS_PATH: "/data/storage"
+          SWAGGER_UI_OIDC_ISSUER_URL: "{{ keycloak_issuer_url }}"
+          SWAGGER_UI_OIDC_CLIENT_ID: "frontend"
+          UI_ISSUER_URL: "{{ keycloak_issuer_url }}"
+          UI_CLIENT_ID: "frontend"
+          UI_LOAD_USER: "true"
+        command: "api --auth-configuration /etc/config/auth.yaml"
+
     - name: Wait for RHTPA API to become available
       ansible.builtin.uri:
-        url: "{{ rhtpa_api_endpoint }}/api/v1/health"
+        url: "http://localhost:{{ rhtpa_api_port }}/"
         method: GET
         status_code: [200]
       register: rhtpa_health
-      retries: 30
-      delay: 10
+      retries: 15
+      delay: 5
       until: rhtpa_health.status == 200
 
     - name: RHTPA deployment complete
       ansible.builtin.debug:
         msg: |
-          RHTPA deployed successfully on {{ inventory_hostname }}
-          API endpoint: {{ rhtpa_api_endpoint }}
-          BOMbastic API: {{ rhtpa_bombastic_endpoint }}
+          RHTPA deployed successfully:
+            UI: http://{{ ansible_host }}:{{ rhtpa_api_port }}
+            API: http://{{ ansible_host }}:{{ rhtpa_api_port }}/api/v2/
+            Infrastructure: http://{{ ansible_host }}:{{ rhtpa_infra_port }}
+            OIDC Issuer: {{ keycloak_issuer_url }}

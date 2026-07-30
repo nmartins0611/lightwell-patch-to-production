@@ -2,6 +2,9 @@
 **/vault.yml
 **/*vault*
 
+# TLS certificates and keys (generated for RHTPA)
+certs/
+
 # Ansible artifacts
 *.retry
 /tmp/

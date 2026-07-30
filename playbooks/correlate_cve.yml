@@ -18,21 +18,36 @@
     cwe_ids: "{{ demo_cwe_ids }}"
 
   tasks:
+    - name: Acquire OIDC token from Keycloak
+      ansible.builtin.uri:
+        url: "{{ rhtpa_keycloak_url }}/realms/{{ rhtpa_keycloak_realm }}/protocol/openid-connect/token"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          client_id: "{{ rhtpa_oidc_client_id }}"
+          client_secret: "{{ rhtpa_oidc_client_secret }}"
+          grant_type: "client_credentials"
+          scope: "openid read:document"
+        status_code: [200]
+      register: token_response
+
     - name: Query RHTPA for SBOMs containing the vulnerable package
       ansible.builtin.uri:
-        url: "{{ rhtpa_api_endpoint }}/api/v1/package?name={{ affected_package }}"
+        url: "{{ rhtpa_api_endpoint }}/api/v2/purl?q=pkg%3Arpm%2Fredhat%2F{{ affected_package }}"
         method: GET
         headers:
           Accept: "application/json"
+          Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200]
       register: rhtpa_package_results
 
     - name: Query RHTPA vulnerability status for the package
       ansible.builtin.uri:
-        url: "{{ rhtpa_api_endpoint }}/api/v1/vulnerability?id={{ cve_id }}"
+        url: "{{ rhtpa_api_endpoint }}/api/v2/vulnerability?q={{ cve_id }}"
         method: GET
         headers:
           Accept: "application/json"
+          Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200]
       register: rhtpa_vuln_results
 

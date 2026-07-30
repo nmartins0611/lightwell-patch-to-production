@@ -10,11 +10,10 @@
   gather_facts: true
 
   tasks:
-    - name: Install vulnerable python-cryptography version
+    - name: Install python-cryptography (demo vulnerable version)
       ansible.builtin.dnf:
-        name: "python3-cryptography-{{ demo_cve_vulnerable_version }}"
+        name: "python3-cryptography"
         state: present
-        allow_downgrade: true
 
     - name: Verify vulnerable version installed
       ansible.builtin.command:
