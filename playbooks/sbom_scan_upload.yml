@@ -53,6 +53,7 @@
           grant_type: "client_credentials"
           scope: "openid create:document read:document"
         status_code: [200]
+        validate_certs: false
       register: token_response
 
     - name: Find all fetched SBOMs
@@ -73,6 +74,7 @@
           Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200, 201, 202]
         timeout: 120
+        validate_certs: false
       loop: "{{ sbom_files.files }}"
       loop_control:
         label: "{{ item.path | basename }}"

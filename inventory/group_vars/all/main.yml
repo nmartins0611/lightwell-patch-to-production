@@ -9,10 +9,10 @@ demo_cwe_ids:
   - "CWE-119"
   - "CWE-787"
 
-rhtpa_api_endpoint: "http://{{ hostvars['node2']['ansible_host'] }}:8443"
+rhtpa_api_endpoint: "https://{{ hostvars['node2']['ansible_host'] }}"
 rhtpa_sbom_endpoint: "{{ rhtpa_api_endpoint }}/api/v2/sbom"
 rhtpa_vex_endpoint: "{{ rhtpa_api_endpoint }}/api/v2/vex"
-rhtpa_keycloak_url: "http://{{ hostvars['node2']['ansible_host'] }}:8180"
+rhtpa_keycloak_url: "https://{{ hostvars['node2']['ansible_host'] }}:9443"
 rhtpa_keycloak_realm: "trustification"
 rhtpa_oidc_client_id: "walker"
 rhtpa_oidc_client_secret: "service-secret-2026"

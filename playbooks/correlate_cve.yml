@@ -29,6 +29,7 @@
           grant_type: "client_credentials"
           scope: "openid read:document"
         status_code: [200]
+        validate_certs: false
       register: token_response
 
     - name: Query RHTPA for SBOMs containing the vulnerable package
@@ -39,6 +40,7 @@
           Accept: "application/json"
           Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200]
+        validate_certs: false
       register: rhtpa_package_results
 
     - name: Query RHTPA vulnerability status for the package
@@ -49,6 +51,7 @@
           Accept: "application/json"
           Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200]
+        validate_certs: false
       register: rhtpa_vuln_results
 
     - name: Build affected hosts list from RHTPA correlation

@@ -27,6 +27,7 @@
           grant_type: "client_credentials"
           scope: "openid create:document read:document"
         status_code: [200]
+        validate_certs: false
       register: token_response
 
     - name: Find post-patch SBOMs
@@ -46,6 +47,7 @@
           Accept: "application/json"
           Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200, 201, 202]
+        validate_certs: false
       loop: "{{ postpatch_sboms.files }}"
       loop_control:
         label: "{{ item.path | basename }}"
@@ -58,6 +60,7 @@
           Accept: "application/json"
           Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200]
+        validate_certs: false
       register: rhtpa_verify
 
     - name: Display RHTPA verification
