@@ -1,0 +1,9 @@
+---
+rhtpa_version: "2"
+rhtpa_collection: "redhat.trusted_profile_analyzer"
+
+syft_version: "latest"
+grype_version: "latest"
+
+container_test_image: "registry.access.redhat.com/ubi9/ubi:latest"
+container_test_name: "patch-verify-{{ demo_cve_id | lower | replace('-', '_') }}"

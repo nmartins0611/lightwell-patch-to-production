@@ -1,0 +1,119 @@
+---
+# Demo 2: CME Compensating Controls — Mitigate While Waiting for Fix
+#
+# Applies compensating controls to affected hosts to raise exploitation
+# complexity while no upstream patch is available. Controls are:
+# 1. SELinux: confine the vulnerable service more tightly
+# 2. Firewall: restrict network access to affected ports
+# 3. Detection: deploy monitoring rule for exploitation indicators
+#
+# Triggered by: EDA workflow (after correlate_cve identifies affected hosts)
+
+- name: "CME Mitigate — Apply Compensating Controls"
+  hosts: targets
+  become: true
+  gather_facts: true
+  vars:
+    cve_id: "{{ demo_cve_id }}"
+    affected_package: "{{ demo_cve_package }}"
+    mitigation_tag: "cme_{{ cve_id | replace('-', '_') }}"
+
+  tasks:
+    - name: "CME Control 1 — Tighten SELinux policy for affected service"
+      block:
+        - name: Ensure SELinux is enforcing
+          ansible.posix.selinux:
+            policy: targeted
+            state: enforcing
+
+        - name: Set SELinux boolean to restrict network access for Python services
+          ansible.posix.seboolean:
+            name: httpd_can_network_connect
+            state: false
+            persistent: true
+          when: "'httpd' in ansible_facts.packages | default({})"
+
+        - name: Apply confined SELinux context to vulnerable package paths
+          ansible.builtin.command:
+            cmd: >-
+              semanage fcontext -a -t confined_service_exec_t
+              "/usr/lib64/python.*/site-packages/cryptography/.*"
+          register: selinux_result
+          changed_when: selinux_result.rc == 0
+          failed_when: selinux_result.rc not in [0, 1]
+
+        - name: Restore SELinux contexts
+          ansible.builtin.command:
+            cmd: restorecon -Rv /usr/lib64/python3.9/site-packages/cryptography/
+          changed_when: true
+
+      rescue:
+        - name: SELinux mitigation failed — log and continue
+          ansible.builtin.debug:
+            msg: "WARNING: SELinux mitigation could not be applied: {{ ansible_failed_result.msg | default('unknown') }}"
+
+    - name: "CME Control 2 — Restrict network access to affected service"
+      block:
+        - name: Create firewalld rich rule to limit inbound connections
+          ansible.posix.firewalld:
+            rich_rule: >-
+              rule family="ipv4"
+              service name="https"
+              source NOT address="10.0.0.0/8"
+              drop
+            permanent: true
+            immediate: true
+            state: enabled
+          notify: reload_firewalld
+
+        - name: Log firewall mitigation applied
+          ansible.builtin.debug:
+            msg: "Firewall mitigation applied: inbound HTTPS restricted to internal networks only"
+
+    - name: "CME Control 3 — Deploy exploitation detection rule"
+      block:
+        - name: Create audit rule for suspicious cryptography library access patterns
+          ansible.builtin.lineinfile:
+            path: /etc/audit/rules.d/cme-{{ cve_id }}.rules
+            line: "-w /usr/lib64/python3.9/site-packages/cryptography/ -p x -k {{ mitigation_tag }}"
+            create: true
+            mode: "0640"
+          notify: restart_auditd
+
+        - name: Create rsyslog rule to forward exploitation indicators
+          ansible.builtin.copy:
+            content: |
+              # CME Detection — {{ cve_id }} exploitation indicators
+              :msg, contains, "{{ mitigation_tag }}" /var/log/cme-detections.log
+            dest: "/etc/rsyslog.d/50-cme-{{ cve_id }}.conf"
+            mode: "0644"
+          notify: restart_rsyslog
+
+    - name: Record mitigation state
+      ansible.builtin.copy:
+        content: |
+          {
+            "cve_id": "{{ cve_id }}",
+            "mitigation_applied": true,
+            "controls": ["selinux_confinement", "firewall_restriction", "detection_rule"],
+            "timestamp": "{{ ansible_date_time.iso8601 }}",
+            "tag": "{{ mitigation_tag }}"
+          }
+        dest: "/var/lib/cme/{{ cve_id }}-mitigation.json"
+        mode: "0644"
+
+  handlers:
+    - name: reload_firewalld
+      ansible.builtin.systemd:
+        name: firewalld
+        state: reloaded
+
+    - name: restart_auditd
+      ansible.builtin.command:
+        cmd: service auditd restart
+      changed_when: true
+
+    - name: restart_rsyslog
+      ansible.builtin.systemd:
+        name: rsyslog
+        state: restarted

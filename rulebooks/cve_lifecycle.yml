@@ -1,0 +1,35 @@
+---
+- name: CVE Lifecycle — Lightwell + AAP Demo
+  hosts: all
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: "{{ eda_webhook_port | default(5000) }}"
+
+  rules:
+    - name: CVE disclosed — no fix available yet
+      condition: event.payload.type == "cve_disclosure"
+      action:
+        run_workflow_template:
+          name: "Demo — SBOM Correlate and Mitigate"
+          organization: "Default"
+          job_args:
+            extra_vars:
+              cve_id: "{{ event.payload.cve_id }}"
+              cvss_vector: "{{ event.payload.cvss_vector }}"
+              cwe_ids: "{{ event.payload.cwe_ids }}"
+              affected_package: "{{ event.payload.affected_package }}"
+              affected_version_range: "{{ event.payload.affected_version_range }}"
+
+    - name: RHSA available — Lightwell resolved the CVE
+      condition: event.payload.type == "rhsa_available"
+      action:
+        run_workflow_template:
+          name: "Demo — Patch Test and Deploy"
+          organization: "Default"
+          job_args:
+            extra_vars:
+              cve_id: "{{ event.payload.cve_id }}"
+              advisory_id: "{{ event.payload.advisory_id }}"
+              fixed_package: "{{ event.payload.fixed_package }}"
+              fixed_version: "{{ event.payload.fixed_version }}"

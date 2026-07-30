@@ -1,0 +1,14 @@
+---
+collections:
+  - name: redhat.trusted_profile_analyzer
+    source: https://galaxy.ansible.com
+  - name: ansible.eda
+    source: https://galaxy.ansible.com
+  - name: ansible.platform
+    source: https://console.redhat.com/api/automation-hub/
+  - name: redhat.rhel_system_roles
+    source: https://console.redhat.com/api/automation-hub/
+  - name: community.general
+    source: https://galaxy.ansible.com
+  - name: ansible.posix
+    source: https://galaxy.ansible.com

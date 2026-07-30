@@ -1,0 +1,46 @@
+{
+  "cve_id": "CVE-2026-51234",
+  "description": "Remote code execution vulnerability in python-cryptography due to buffer overflow in X.509 certificate parsing. An attacker can craft a malicious X.509 certificate that, when parsed by an application using python-cryptography, triggers a heap buffer overflow allowing arbitrary code execution.",
+  "affected_package": "python-cryptography",
+  "affected_versions": "< 43.0.1",
+  "fixed_version": "43.0.1-2.el9",
+  "advisory_id": "RHSA-2026:4521",
+  "cvss": {
+    "version": "3.1",
+    "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+    "base_score": 10.0,
+    "severity": "Critical"
+  },
+  "cwe_ids": ["CWE-119", "CWE-787"],
+  "cwe_descriptions": {
+    "CWE-119": "Improper Restriction of Operations within the Bounds of a Memory Buffer",
+    "CWE-787": "Out-of-bounds Write"
+  },
+  "attack_vector": "Network",
+  "attack_complexity": "Low",
+  "privileges_required": "None",
+  "user_interaction": "None",
+  "scope": "Changed",
+  "platforms_affected": [
+    "RHEL 9 (all architectures)",
+    "RHEL 8 (all architectures)",
+    "Fedora 39+",
+    "CentOS Stream 9"
+  ],
+  "cisa_kev": true,
+  "actively_exploited": true,
+  "lightwell_resolution": {
+    "resolved": true,
+    "resolution_date": "2026-07-30T12:00:00Z",
+    "upstream_commit": "https://github.com/pyca/cryptography/commit/abc123def456",
+    "engineers_involved": 3,
+    "time_to_fix_hours": 18
+  },
+  "timeline": {
+    "discovered": "2026-07-29T22:00:00Z",
+    "disclosed": "2026-07-30T08:00:00Z",
+    "cisa_kev_added": "2026-07-30T09:00:00Z",
+    "lightwell_resolved": "2026-07-30T12:00:00Z",
+    "rhsa_published": "2026-07-30T14:00:00Z"
+  }
+}

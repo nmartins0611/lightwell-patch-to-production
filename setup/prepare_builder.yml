@@ -1,0 +1,74 @@
+---
+# Setup: Prepare Builder Node
+#
+# Installs scanning tools (Syft, Grype) and podman configuration
+# on Node 2 for container testing and SBOM operations.
+
+- name: "Setup — Prepare Builder Node"
+  hosts: builders
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Install container and scanning prerequisites
+      ansible.builtin.dnf:
+        name:
+          - podman
+          - skopeo
+          - buildah
+          - python3-pip
+          - jq
+        state: present
+
+    - name: Install Syft
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/anchore/syft/main/install.sh"
+        dest: /tmp/install-syft.sh
+        mode: "0755"
+
+    - name: Run Syft installer
+      ansible.builtin.command:
+        cmd: /tmp/install-syft.sh -b /usr/local/bin
+        creates: /usr/local/bin/syft
+
+    - name: Install Grype
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/anchore/grype/main/install.sh"
+        dest: /tmp/install-grype.sh
+        mode: "0755"
+
+    - name: Run Grype installer
+      ansible.builtin.command:
+        cmd: /tmp/install-grype.sh -b /usr/local/bin
+        creates: /usr/local/bin/grype
+
+    - name: Update Grype vulnerability database
+      ansible.builtin.command:
+        cmd: grype db update
+      changed_when: true
+
+    - name: Verify tools installed
+      ansible.builtin.command:
+        cmd: "{{ item }} version"
+      loop:
+        - syft
+        - grype
+        - podman
+      register: tool_versions
+      changed_when: false
+
+    - name: Display tool versions
+      ansible.builtin.debug:
+        msg: "{{ item.item }}: {{ item.stdout_lines[0] | default(item.stdout) }}"
+      loop: "{{ tool_versions.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Ensure output directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0750"
+      loop:
+        - "{{ sbom_output_dir }}"
+        - "{{ report_output_dir }}"

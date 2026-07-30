@@ -1,0 +1,26 @@
+---
+version: 3
+
+build_arg_defaults:
+  ANSIBLE_GALAXY_CLI_COLLECTION_OPTS: "--pre"
+
+dependencies:
+  galaxy: requirements.yml
+  python:
+    - jmespath
+  system:
+    - curl [platform:rpm]
+    - jq [platform:rpm]
+
+additional_build_files:
+  - src: collections/requirements.yml
+    dest: configs
+
+additional_build_steps:
+  prepend_final:
+    - RUN curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+    - RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+images:
+  base_image:
+    name: "registry.redhat.io/ansible-automation-platform/ee-minimal-rhel9:latest"

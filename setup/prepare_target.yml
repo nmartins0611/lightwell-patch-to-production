@@ -1,0 +1,60 @@
+---
+# Setup: Prepare Target Node
+#
+# Installs the vulnerable version of python-cryptography on Node 1
+# and ensures scanning prerequisites are met.
+
+- name: "Setup — Prepare Target Node for Demo"
+  hosts: targets
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Install vulnerable python-cryptography version
+      ansible.builtin.dnf:
+        name: "python3-cryptography-{{ demo_cve_vulnerable_version }}"
+        state: present
+        allow_downgrade: true
+
+    - name: Verify vulnerable version installed
+      ansible.builtin.command:
+        cmd: rpm -q python3-cryptography
+      register: pkg_check
+      changed_when: false
+
+    - name: Display installed version
+      ansible.builtin.debug:
+        msg: "Target prepared: {{ pkg_check.stdout }}"
+
+    - name: Install Syft for SBOM generation
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/anchore/syft/main/install.sh"
+        dest: /tmp/install-syft.sh
+        mode: "0755"
+
+    - name: Run Syft installer
+      ansible.builtin.command:
+        cmd: /tmp/install-syft.sh -b /usr/local/bin
+        creates: /usr/local/bin/syft
+
+    - name: Ensure output directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0750"
+      loop:
+        - "{{ sbom_output_dir }}"
+        - "{{ report_output_dir }}"
+        - "/var/lib/cme"
+
+    - name: Ensure firewalld is running (for CME mitigations)
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Ensure auditd is running (for CME detection)
+      ansible.builtin.systemd:
+        name: auditd
+        state: started
+        enabled: true

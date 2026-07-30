@@ -1,0 +1,55 @@
+---
+# Setup: Deploy RHTPA on Node 2
+#
+# Uses the redhat.trusted_profile_analyzer collection to deploy the
+# full RHTPA stack as containers via podman kube play.
+#
+# Run this once during demo environment provisioning.
+
+- name: "Setup — Deploy Red Hat Trusted Profile Analyzer"
+  hosts: builders
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Ensure podman is installed
+      ansible.builtin.dnf:
+        name:
+          - podman
+          - podman-plugins
+        state: present
+
+    - name: Ensure podman socket is active
+      ansible.builtin.systemd:
+        name: podman.socket
+        state: started
+        enabled: true
+
+    - name: Login to registry.redhat.io
+      containers.podman.podman_login:
+        registry: registry.redhat.io
+        username: "{{ vault_registry_username }}"
+        password: "{{ vault_registry_password }}"
+
+  roles:
+    - role: redhat.trusted_profile_analyzer.tpa_single_node
+      vars:
+        tpa_single_node_rhel_host: "{{ inventory_hostname }}"
+
+  post_tasks:
+    - name: Wait for RHTPA API to become available
+      ansible.builtin.uri:
+        url: "{{ rhtpa_api_endpoint }}/api/v1/health"
+        method: GET
+        status_code: [200]
+      register: rhtpa_health
+      retries: 30
+      delay: 10
+      until: rhtpa_health.status == 200
+
+    - name: RHTPA deployment complete
+      ansible.builtin.debug:
+        msg: |
+          RHTPA deployed successfully on {{ inventory_hostname }}
+          API endpoint: {{ rhtpa_api_endpoint }}
+          BOMbastic API: {{ rhtpa_bombastic_endpoint }}

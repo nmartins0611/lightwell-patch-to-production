@@ -1,0 +1,272 @@
+---
+# Controller Configuration as Code
+#
+# Configures AAP Controller with all job templates, workflow templates,
+# credentials, and projects needed for the demo.
+#
+# Uses the ansible.platform collection for CaC.
+
+- name: "Controller CaC — Configure Demo Environment"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    controller_host: "{{ vault_controller_host }}"
+    controller_username: "{{ vault_controller_username }}"
+    controller_password: "{{ vault_controller_password }}"
+    controller_validate_certs: false
+    demo_org: "Default"
+    demo_project: "Lightwell Patch Demo"
+    demo_inventory: "Demo Fleet"
+    demo_credential: "Demo Machine Credential"
+    demo_scm_url: "{{ vault_demo_scm_url | default('https://github.com/your-org/lighwell-patch-demo.git') }}"
+
+  tasks:
+    - name: Create project
+      ansible.platform.project:
+        name: "{{ demo_project }}"
+        organization: "{{ demo_org }}"
+        scm_type: git
+        scm_url: "{{ demo_scm_url }}"
+        scm_branch: main
+        scm_update_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create inventory
+      ansible.platform.inventory:
+        name: "{{ demo_inventory }}"
+        organization: "{{ demo_org }}"
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create inventory source from project
+      ansible.platform.inventory_source:
+        name: "Demo Hosts"
+        inventory: "{{ demo_inventory }}"
+        source: scm
+        source_project: "{{ demo_project }}"
+        source_path: "inventory/hosts.yml"
+        update_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    # --- Job Templates ---
+
+    - name: Create JT — SBOM Scan and Upload
+      ansible.platform.job_template:
+        name: "Demo — SBOM Scan and Upload"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/sbom_scan_upload.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: false
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create JT — CVE Correlation
+      ansible.platform.job_template:
+        name: "Demo — CVE Correlation"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/correlate_cve.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create JT — CME Mitigate
+      ansible.platform.job_template:
+        name: "Demo — CME Mitigate"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/cme_mitigate.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create JT — CME Verify
+      ansible.platform.job_template:
+        name: "Demo — CME Verify"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/cme_verify.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create JT — Container Test
+      ansible.platform.job_template:
+        name: "Demo — Container Test"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/container_test.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: true
+        limit: "builders"
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create JT — Patch and Verify
+      ansible.platform.job_template:
+        name: "Demo — Patch and Verify"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/patch_and_verify.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: true
+        limit: "targets"
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create JT — Close Loop
+      ansible.platform.job_template:
+        name: "Demo — Close Loop"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/close_loop.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    # --- Workflow Templates ---
+
+    - name: Create Workflow — SBOM Correlate and Mitigate (Demo 1+2)
+      ansible.platform.workflow_job_template:
+        name: "Demo — SBOM Correlate and Mitigate"
+        organization: "{{ demo_org }}"
+        inventory: "{{ demo_inventory }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create Workflow — Patch Test and Deploy (Demo 3)
+      ansible.platform.workflow_job_template:
+        name: "Demo — Patch Test and Deploy"
+        organization: "{{ demo_org }}"
+        inventory: "{{ demo_inventory }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    # --- Workflow Nodes (Demo 1+2) ---
+
+    - name: "Workflow 1 Node: CVE Correlation"
+      ansible.platform.workflow_job_template_node:
+        workflow_job_template: "Demo — SBOM Correlate and Mitigate"
+        identifier: "correlate"
+        unified_job_template: "Demo — CVE Correlation"
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: "Workflow 1 Node: CME Mitigate (on success)"
+      ansible.platform.workflow_job_template_node:
+        workflow_job_template: "Demo — SBOM Correlate and Mitigate"
+        identifier: "mitigate"
+        unified_job_template: "Demo — CME Mitigate"
+        success_nodes:
+          - identifier: "correlate"
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: "Workflow 1 Node: CME Verify (on success)"
+      ansible.platform.workflow_job_template_node:
+        workflow_job_template: "Demo — SBOM Correlate and Mitigate"
+        identifier: "verify"
+        unified_job_template: "Demo — CME Verify"
+        success_nodes:
+          - identifier: "mitigate"
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    # --- Workflow Nodes (Demo 3) ---
+
+    - name: "Workflow 2 Node: Container Test"
+      ansible.platform.workflow_job_template_node:
+        workflow_job_template: "Demo — Patch Test and Deploy"
+        identifier: "container_test"
+        unified_job_template: "Demo — Container Test"
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: "Workflow 2 Node: Patch VMs (on success)"
+      ansible.platform.workflow_job_template_node:
+        workflow_job_template: "Demo — Patch Test and Deploy"
+        identifier: "patch"
+        unified_job_template: "Demo — Patch and Verify"
+        success_nodes:
+          - identifier: "container_test"
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: "Workflow 2 Node: Close Loop (on success)"
+      ansible.platform.workflow_job_template_node:
+        workflow_job_template: "Demo — Patch Test and Deploy"
+        identifier: "close_loop"
+        unified_job_template: "Demo — Close Loop"
+        success_nodes:
+          - identifier: "patch"
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Controller configuration complete
+      ansible.builtin.debug:
+        msg: |
+          Controller configured:
+          - 7 Job Templates
+          - 2 Workflow Templates (EDA-triggered)
+          - 1 Project (SCM-synced)
+          - 1 Inventory with SCM source

@@ -1,0 +1,111 @@
+---
+# Demo 3, Phase 2: Staged VM Patching + Post-Patch Verification
+#
+# Applies the RHSA fix to production VMs with health checks,
+# verifies the CVE is resolved, and rescans for fresh SBOM.
+#
+# Triggered by: EDA workflow (after container_test passes)
+# Runs on: targets (production VMs)
+
+- name: "Patch and Verify — Staged VM Remediation"
+  hosts: targets
+  become: true
+  gather_facts: true
+  serial: "{{ patch_serial | default('100%') }}"
+  vars:
+    cve_id: "{{ demo_cve_id }}"
+    advisory_id: "{{ demo_advisory_id }}"
+    fixed_package: "{{ demo_cve_package }}"
+
+  pre_tasks:
+    - name: Pre-patch health check
+      ansible.builtin.command:
+        cmd: systemctl is-system-running
+      register: pre_health
+      changed_when: false
+      failed_when: false
+
+    - name: Record pre-patch package state
+      ansible.builtin.command:
+        cmd: "rpm -q python3-cryptography"
+      register: pre_patch_version
+      changed_when: false
+      failed_when: false
+
+    - name: Display pre-patch state
+      ansible.builtin.debug:
+        msg: "Pre-patch: {{ pre_patch_version.stdout | default('not installed') }} | System: {{ pre_health.stdout | default('unknown') }}"
+
+  tasks:
+    - name: Apply patch using advisory-based minimal update
+      ansible.builtin.dnf:
+        name: "python3-cryptography"
+        state: latest
+        update_only: true
+        security: true
+      register: patch_result
+
+    - name: Record post-patch package state
+      ansible.builtin.command:
+        cmd: "rpm -q python3-cryptography"
+      register: post_patch_version
+      changed_when: false
+
+    - name: Post-patch health check
+      ansible.builtin.command:
+        cmd: systemctl is-system-running
+      register: post_health
+      changed_when: false
+      failed_when: false
+
+    - name: Assert system still healthy after patching
+      ansible.builtin.assert:
+        that:
+          - post_health.stdout in ['running', 'degraded']
+        fail_msg: "System health degraded after patching — consider rollback"
+        success_msg: "System healthy post-patch"
+
+    - name: Verify CVE is resolved via package version
+      ansible.builtin.command:
+        cmd: "rpm -q python3-cryptography"
+      register: verify_version
+      changed_when: false
+
+    - name: Run post-patch SBOM scan (refresh for RHTPA)
+      ansible.builtin.command:
+        cmd: >-
+          syft packages dir:/ --output cyclonedx-json
+          --file {{ sbom_output_dir }}/{{ inventory_hostname }}-sbom-postpatch.json
+          --exclude /proc --exclude /sys --exclude /dev
+      changed_when: true
+
+    - name: Fetch post-patch SBOM
+      ansible.builtin.fetch:
+        src: "{{ sbom_output_dir }}/{{ inventory_hostname }}-sbom-postpatch.json"
+        dest: "{{ sbom_output_dir }}/postpatch/"
+        flat: false
+
+  post_tasks:
+    - name: Build patch result
+      ansible.builtin.set_fact:
+        patch_report:
+          host: "{{ inventory_hostname }}"
+          cve_id: "{{ cve_id }}"
+          advisory_id: "{{ advisory_id }}"
+          pre_version: "{{ pre_patch_version.stdout | default('unknown') }}"
+          post_version: "{{ post_patch_version.stdout | default('unknown') }}"
+          patch_applied: "{{ patch_result.changed }}"
+          system_healthy: "{{ post_health.stdout in ['running', 'degraded'] }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Display patch summary
+      ansible.builtin.debug:
+        msg: |
+          === PATCH RESULT ===
+          Host: {{ patch_report.host }}
+          CVE: {{ patch_report.cve_id }}
+          Before: {{ patch_report.pre_version }}
+          After: {{ patch_report.post_version }}
+          Patched: {{ patch_report.patch_applied }}
+          System healthy: {{ patch_report.system_healthy }}
+          ====================

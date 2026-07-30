@@ -1,0 +1,20 @@
+# Vault files
+**/vault.yml
+**/*vault*
+
+# Ansible artifacts
+*.retry
+/tmp/
+__pycache__/
+
+# SBOM and report outputs
+/sbom-artifacts/
+/demo-reports/
+
+# EE build context
+execution-environment/context/
+
+# OS
+.DS_Store
+*.swp
+*.swo

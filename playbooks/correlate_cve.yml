@@ -1,0 +1,84 @@
+---
+# Demo 1, Phase 2: Query RHTPA for CVE Correlation
+#
+# Given a CVE ID and affected package, queries RHTPA to identify which
+# stored SBOMs contain the vulnerable component. Maps results back to
+# AAP inventory and produces a prioritized exposure report.
+#
+# Triggered by: EDA workflow (after sbom_scan_upload or from stored SBOMs)
+
+- name: "CVE Correlation — Query RHTPA and Map to Inventory"
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    cve_id: "{{ demo_cve_id }}"
+    affected_package: "{{ demo_cve_package }}"
+    cvss_vector: "{{ demo_cvss_vector }}"
+    cwe_ids: "{{ demo_cwe_ids }}"
+
+  tasks:
+    - name: Query RHTPA for SBOMs containing the vulnerable package
+      ansible.builtin.uri:
+        url: "{{ rhtpa_api_endpoint }}/api/v1/package?name={{ affected_package }}"
+        method: GET
+        headers:
+          Accept: "application/json"
+        status_code: [200]
+      register: rhtpa_package_results
+
+    - name: Query RHTPA vulnerability status for the package
+      ansible.builtin.uri:
+        url: "{{ rhtpa_api_endpoint }}/api/v1/vulnerability?id={{ cve_id }}"
+        method: GET
+        headers:
+          Accept: "application/json"
+        status_code: [200]
+      register: rhtpa_vuln_results
+
+    - name: Build affected hosts list from RHTPA correlation
+      ansible.builtin.set_fact:
+        affected_hosts: >-
+          {{
+            rhtpa_package_results.json.results
+            | default([])
+            | map(attribute='source_hostname')
+            | select('in', groups['targets'] | map('extract', hostvars, 'inventory_hostname'))
+            | list
+          }}
+
+    - name: Enrich with inventory context
+      ansible.builtin.set_fact:
+        exposure_report:
+          cve_id: "{{ cve_id }}"
+          cvss_vector: "{{ cvss_vector }}"
+          cvss_base_score: 10.0
+          cwe_ids: "{{ cwe_ids }}"
+          affected_package: "{{ affected_package }}"
+          affected_hosts: "{{ affected_hosts }}"
+          affected_count: "{{ affected_hosts | length }}"
+          environment_exposure:
+            production_hosts: "{{ affected_hosts | select('in', groups.get('production', [])) | list }}"
+            internet_facing: true
+          remediation_layer: "OS"
+          fix_available: false
+          recommended_action: "Apply compensating controls (CME mitigation)"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Write exposure report
+      ansible.builtin.copy:
+        content: "{{ exposure_report | to_nice_json }}"
+        dest: "{{ report_output_dir }}/exposure-report-{{ cve_id }}.json"
+        mode: "0644"
+
+    - name: Display exposure summary
+      ansible.builtin.debug:
+        msg: |
+          === CVE EXPOSURE REPORT ===
+          CVE: {{ exposure_report.cve_id }}
+          CVSS: {{ exposure_report.cvss_base_score }} ({{ exposure_report.cvss_vector }})
+          Affected hosts: {{ exposure_report.affected_count }}
+          Internet-facing: {{ exposure_report.environment_exposure.internet_facing }}
+          Fix available: {{ exposure_report.fix_available }}
+          Recommended action: {{ exposure_report.recommended_action }}
+          ===========================

@@ -1,0 +1,68 @@
+---
+# Demo 1, Phase 1: SBOM Scan and Upload to RHTPA
+#
+# Scans targets with Syft to produce CycloneDX SBOMs, then uploads
+# each SBOM to RHTPA via the BOMbastic API.
+#
+# Triggered by: EDA (cve_disclosure event) or scheduled (pre-demo baseline)
+
+- name: "SBOM Scan — Generate CycloneDX on targets"
+  hosts: targets
+  gather_facts: true
+  vars:
+    sbom_format: "cyclonedx-json"
+    sbom_output: "{{ sbom_output_dir }}/{{ inventory_hostname }}-sbom.json"
+
+  tasks:
+    - name: Ensure output directory exists
+      ansible.builtin.file:
+        path: "{{ sbom_output_dir }}"
+        state: directory
+        mode: "0750"
+
+    - name: Run Syft SBOM scan on filesystem
+      ansible.builtin.command:
+        cmd: >-
+          syft packages dir:/ --output {{ sbom_format }}
+          --file {{ sbom_output }}
+          --exclude /proc --exclude /sys --exclude /dev
+      changed_when: true
+
+    - name: Fetch SBOM to controller
+      ansible.builtin.fetch:
+        src: "{{ sbom_output }}"
+        dest: "{{ sbom_output_dir }}/fetched/"
+        flat: false
+
+- name: "SBOM Upload — Push to RHTPA BOMbastic API"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    fetched_sbom_dir: "{{ sbom_output_dir }}/fetched"
+
+  tasks:
+    - name: Find all fetched SBOMs
+      ansible.builtin.find:
+        paths: "{{ fetched_sbom_dir }}"
+        patterns: "*-sbom.json"
+        recurse: true
+      register: sbom_files
+
+    - name: Upload each SBOM to RHTPA
+      ansible.builtin.uri:
+        url: "{{ rhtpa_bombastic_endpoint }}"
+        method: POST
+        src: "{{ item.path }}"
+        headers:
+          Content-Type: "application/json"
+          Accept: "application/json"
+        status_code: [200, 201, 202]
+      loop: "{{ sbom_files.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      register: upload_results
+
+    - name: Report upload status
+      ansible.builtin.debug:
+        msg: "Uploaded {{ upload_results.results | length }} SBOMs to RHTPA"
