@@ -1,8 +1,7 @@
 ---
 collections:
-  - name: redhat.trusted_profile_analyzer
   - name: ansible.eda
-  - name: ansible.platform
+  - name: ansible.controller
   - name: redhat.rhel_system_roles
   - name: community.general
   - name: ansible.posix
