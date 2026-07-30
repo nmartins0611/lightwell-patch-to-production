@@ -1,0 +1,86 @@
+---
+- name: Deploy report web server on builder node
+  hosts: builders
+  gather_facts: false
+
+  vars:
+    report_web_dir: /var/www/reports
+    report_web_port: 8080
+
+  tasks:
+    - name: Install nginx
+      ansible.builtin.dnf:
+        name: nginx
+        state: present
+
+    - name: Create reports directory
+      ansible.builtin.file:
+        path: "{{ report_web_dir }}"
+        state: directory
+        owner: nginx
+        group: nginx
+        mode: "0755"
+        setype: httpd_sys_content_t
+
+    - name: Deploy nginx config for reports
+      ansible.builtin.copy:
+        dest: /etc/nginx/conf.d/reports.conf
+        mode: "0644"
+        content: |
+          server {
+              listen {{ report_web_port }};
+              server_name _;
+              root {{ report_web_dir }};
+              autoindex on;
+              autoindex_format json;
+              autoindex_exact_size off;
+              autoindex_localtime on;
+
+              location / {
+                  try_files $uri $uri/ =404;
+                  add_header Access-Control-Allow-Origin *;
+                  add_header Content-Type application/json;
+              }
+
+              location = /health {
+                  return 200 '{"status":"ok"}';
+                  add_header Content-Type application/json;
+              }
+          }
+      notify: Restart nginx
+
+    - name: Remove default server block
+      ansible.builtin.lineinfile:
+        path: /etc/nginx/nginx.conf
+        regexp: '^\s*listen\s+80'
+        state: absent
+      notify: Restart nginx
+
+    - name: Open firewall for report server
+      ansible.posix.firewalld:
+        port: "{{ report_web_port }}/tcp"
+        permanent: true
+        immediate: true
+        state: enabled
+
+    - name: Enable and start nginx
+      ansible.builtin.systemd:
+        name: nginx
+        enabled: true
+        state: started
+
+    - name: Verify report server is responding
+      ansible.builtin.uri:
+        url: "http://localhost:{{ report_web_port }}/health"
+        return_content: true
+      register: health_check
+
+    - name: Report server ready
+      ansible.builtin.debug:
+        msg: "Report server live at http://{{ ansible_host }}:{{ report_web_port }}/"
+
+  handlers:
+    - name: Restart nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: restarted

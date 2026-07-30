@@ -103,3 +103,16 @@
           Fix available: {{ exposure_report.fix_available }}
           Recommended action: {{ exposure_report.recommended_action }}
           ===========================
+
+    - name: Publish exposure report to report server
+      ansible.builtin.copy:
+        src: "{{ report_output_dir }}/exposure-report-{{ cve_id }}.json"
+        dest: "{{ report_web_dir }}/exposure-report-{{ cve_id }}.json"
+        owner: nginx
+        group: nginx
+        mode: "0644"
+      delegate_to: node2
+
+    - name: Report published
+      ansible.builtin.debug:
+        msg: "Report available at {{ report_server_url }}/exposure-report-{{ cve_id }}.json"

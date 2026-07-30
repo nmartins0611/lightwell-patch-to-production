@@ -21,3 +21,5 @@ eda_webhook_port: 5000
 
 sbom_output_dir: "/tmp/sbom-artifacts"
 report_output_dir: "/tmp/demo-reports"
+report_server_url: "http://{{ hostvars['node2']['ansible_host'] }}:8080"
+report_web_dir: "/var/www/reports"

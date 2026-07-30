@@ -199,3 +199,16 @@
           ║ Compensating controls: Removed (patch active)    ║
           ║ RHTPA inventory: Updated                         ║
           ╚══════════════════════════════════════════════════╝
+
+    - name: Publish final report to report server
+      ansible.builtin.copy:
+        src: "{{ report_output_dir }}/final-report-{{ cve_id }}.json"
+        dest: "{{ report_web_dir }}/final-report-{{ cve_id }}.json"
+        owner: nginx
+        group: nginx
+        mode: "0644"
+      delegate_to: node2
+
+    - name: Report published
+      ansible.builtin.debug:
+        msg: "Report available at {{ report_server_url }}/final-report-{{ cve_id }}.json"
