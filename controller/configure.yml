@@ -169,6 +169,65 @@
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
 
+    # --- Job Templates (Demo 4: App Dependencies) ---
+
+    - name: Create JT — App Dependency Remediate (CI/CD)
+      ansible.controller.job_template:
+        name: "Demo — App Dependency Remediate"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/app_dependency_remediate.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create JT — App GitOps Remediate
+      ansible.controller.job_template:
+        name: "Demo — App GitOps Remediate"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/app_gitops_remediate.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create JT — App Container Rebuild
+      ansible.controller.job_template:
+        name: "Demo — App Container Rebuild"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/app_container_rebuild.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: true
+        limit: "builders"
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create JT — Reset Demo
+      ansible.controller.job_template:
+        name: "Demo — Reset"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "setup/reset_demo.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: false
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
     # --- Workflow Templates ---
 
     - name: Create Workflow — SBOM Correlate and Mitigate (Demo 1+2)
@@ -257,11 +316,53 @@
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
 
+    # --- Workflow: App Dependency Remediate (Demo 4a — CI/CD direct) ---
+
+    - name: Create Workflow — App Dependency Remediate
+      ansible.controller.workflow_job_template:
+        name: "Demo — App Dependency Remediate"
+        organization: "{{ demo_org }}"
+        inventory: "{{ demo_inventory }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: "Workflow 3 Node: CI/CD Remediate"
+      ansible.controller.workflow_job_template_node:
+        workflow_job_template: "Demo — App Dependency Remediate"
+        identifier: "app_cicd_remediate"
+        unified_job_template: "Demo — App Dependency Remediate"
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    # --- Workflow: App GitOps Remediate (Demo 4b — PR flow) ---
+
+    - name: Create Workflow — App GitOps Remediate
+      ansible.controller.workflow_job_template:
+        name: "Demo — App GitOps Remediate"
+        organization: "{{ demo_org }}"
+        inventory: "{{ demo_inventory }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: "Workflow 4 Node: GitOps Remediate"
+      ansible.controller.workflow_job_template_node:
+        workflow_job_template: "Demo — App GitOps Remediate"
+        identifier: "app_gitops_remediate"
+        unified_job_template: "Demo — App GitOps Remediate"
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
     - name: Controller configuration complete
       ansible.builtin.debug:
         msg: |
           Controller configured:
-          - 7 Job Templates
-          - 2 Workflow Templates (EDA-triggered)
+          - 12 Job Templates (7 original + 4 Demo 4 + Reset)
+          - 4 Workflow Templates (2 original + 2 Demo 4)
           - 1 Project (SCM-synced)
           - 1 Inventory with SCM source

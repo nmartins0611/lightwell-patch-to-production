@@ -1,0 +1,221 @@
+---
+# Setup: Deploy Gitea + act_runner on Node 2
+#
+# Deploys Gitea (lightweight Git forge with CI/CD via Gitea Actions)
+# and act_runner for executing CI workflows. Used by Demo 4 to
+# host the config-service application repo and run build pipelines.
+#
+# Port allocations on node2:
+#   3000 — Gitea web UI + API + Git HTTP
+#   8081 — pypiserver (Lightwell PyPI index)
+#   8180 — Keycloak
+#   8443 — RHTPA API
+#   8080 — nginx report server
+
+- name: "Setup — Deploy Gitea + act_runner"
+  hosts: builders
+  become: true
+  gather_facts: true
+  vars:
+    gitea_image: "docker.io/gitea/gitea:latest"
+    gitea_container_name: "gitea"
+    gitea_port: 3000
+    gitea_ssh_port: 2222
+    gitea_network: "tcnet"
+    gitea_data_volume: "gitea-data"
+    gitea_admin_user: "demo-admin"
+    gitea_admin_password: "{{ vault_gitea_admin_password | default('Demo2026!') }}"
+    gitea_admin_email: "admin@nostromo.io"
+
+    runner_image: "docker.io/gitea/act_runner:latest"
+    runner_container_name: "gitea-runner"
+    runner_data_volume: "gitea-runner-data"
+
+  tasks:
+    - name: "Phase 1 — Deploy Gitea"
+      block:
+        - name: Create Gitea data volume
+          containers.podman.podman_volume:
+            name: "{{ gitea_data_volume }}"
+            state: present
+
+        - name: Deploy Gitea container
+          containers.podman.podman_container:
+            name: "{{ gitea_container_name }}"
+            image: "{{ gitea_image }}"
+            state: started
+            recreate: false
+            network: "{{ gitea_network }}"
+            ports:
+              - "{{ gitea_port }}:3000"
+              - "{{ gitea_ssh_port }}:22"
+            volumes:
+              - "{{ gitea_data_volume }}:/data:Z"
+              - "/etc/timezone:/etc/timezone:ro"
+              - "/etc/localtime:/etc/localtime:ro"
+            env:
+              GITEA__server__ROOT_URL: "http://{{ ansible_host }}:{{ gitea_port }}/"
+              GITEA__server__HTTP_PORT: "3000"
+              GITEA__server__DOMAIN: "{{ ansible_host }}"
+              GITEA__actions__ENABLED: "true"
+              GITEA__actions__DEFAULT_ACTIONS_URL: "https://github.com"
+              GITEA__service__DISABLE_REGISTRATION: "true"
+              GITEA__repository__ENABLE_PUSH_CREATE_USER: "true"
+              GITEA__repository__ENABLE_PUSH_CREATE_ORG: "true"
+              GITEA__api__ENABLE_SWAGGER: "true"
+              GITEA__packages__ENABLED: "true"
+          register: gitea_container
+
+        - name: Wait for Gitea to become ready
+          ansible.builtin.uri:
+            url: "http://localhost:{{ gitea_port }}/api/v1/version"
+            method: GET
+            status_code: [200]
+          register: gitea_health
+          retries: 30
+          delay: 5
+          until: gitea_health.status == 200
+
+        - name: Check if admin user exists
+          ansible.builtin.uri:
+            url: "http://localhost:{{ gitea_port }}/api/v1/users/{{ gitea_admin_user }}"
+            method: GET
+            status_code: [200, 404]
+          register: admin_check
+
+        - name: Create admin user via CLI
+          ansible.builtin.command:
+            cmd: >-
+              podman exec {{ gitea_container_name }}
+              gitea admin user create
+              --username {{ gitea_admin_user }}
+              --password {{ gitea_admin_password }}
+              --email {{ gitea_admin_email }}
+              --admin
+              --must-change-password=false
+          when: admin_check.status == 404
+          register: admin_create
+
+        - name: Create API token for automation
+          ansible.builtin.uri:
+            url: "http://localhost:{{ gitea_port }}/api/v1/users/{{ gitea_admin_user }}/tokens"
+            method: POST
+            user: "{{ gitea_admin_user }}"
+            password: "{{ gitea_admin_password }}"
+            force_basic_auth: true
+            body_format: json
+            body:
+              name: "aap-automation"
+              scopes:
+                - "all"
+            status_code: [201, 422]
+          register: token_result
+
+        - name: Store API token
+          ansible.builtin.set_fact:
+            gitea_api_token: "{{ token_result.json.sha1 | default('token-already-exists') }}"
+          when: token_result.status == 201
+
+        - name: Display token (save this to vault)
+          ansible.builtin.debug:
+            msg: >-
+              Gitea API token created: {{ gitea_api_token | default('Already exists — use existing token or recreate') }}.
+              Add to vault as vault_gitea_api_token.
+          when: token_result.status == 201
+
+    - name: "Phase 2 — Deploy act_runner"
+      block:
+        - name: Create runner data volume
+          containers.podman.podman_volume:
+            name: "{{ runner_data_volume }}"
+            state: present
+
+        - name: Generate runner registration token
+          ansible.builtin.uri:
+            url: "http://localhost:{{ gitea_port }}/api/v1/admin/runners/registration-token"
+            method: GET
+            user: "{{ gitea_admin_user }}"
+            password: "{{ gitea_admin_password }}"
+            force_basic_auth: true
+            status_code: [200]
+          register: runner_token
+
+        - name: Create runner config
+          ansible.builtin.copy:
+            content: |
+              log:
+                level: info
+              runner:
+                file: .runner
+                capacity: 1
+                timeout: 3600
+                labels:
+                  - "ubuntu-latest:docker://node:20-bookworm"
+                  - "python:docker://python:3.11-slim"
+                  - "default:docker://python:3.11-slim"
+              container:
+                network: "{{ gitea_network }}"
+                privileged: false
+                options: ""
+                valid_volumes:
+                  - "/tmp/lightwell-pypi/**"
+            dest: /tmp/gitea-runner-config.yaml
+            mode: "0644"
+
+        - name: Register and start act_runner
+          containers.podman.podman_container:
+            name: "{{ runner_container_name }}"
+            image: "{{ runner_image }}"
+            state: started
+            recreate: true
+            network: "{{ gitea_network }}"
+            volumes:
+              - "{{ runner_data_volume }}:/data:Z"
+              - "/tmp/gitea-runner-config.yaml:/config.yaml:ro,Z"
+              - "/run/podman/podman.sock:/var/run/docker.sock:Z"
+            env:
+              GITEA_INSTANCE_URL: "http://{{ gitea_container_name }}:3000"
+              GITEA_RUNNER_REGISTRATION_TOKEN: "{{ runner_token.json.token }}"
+              GITEA_RUNNER_NAME: "demo-runner"
+              CONFIG_FILE: "/config.yaml"
+          register: runner_container
+
+        - name: Wait for runner to register
+          ansible.builtin.uri:
+            url: "http://localhost:{{ gitea_port }}/api/v1/admin/runners"
+            method: GET
+            user: "{{ gitea_admin_user }}"
+            password: "{{ gitea_admin_password }}"
+            force_basic_auth: true
+            status_code: [200]
+          register: runners_list
+          retries: 10
+          delay: 5
+          until: runners_list.json | length > 0
+
+    - name: "Phase 3 — Open firewall ports"
+      block:
+        - name: Allow Gitea through firewall
+          ansible.posix.firewalld:
+            port: "{{ item }}/tcp"
+            permanent: true
+            immediate: true
+            state: enabled
+          loop:
+            - "{{ gitea_port }}"
+            - "{{ gitea_ssh_port }}"
+
+    - name: Deployment summary
+      ansible.builtin.debug:
+        msg: |
+          === GITEA DEPLOYED ===
+          Web UI:  http://{{ ansible_host }}:{{ gitea_port }}
+          API:     http://{{ ansible_host }}:{{ gitea_port }}/api/v1/
+          SSH:     ssh://git@{{ ansible_host }}:{{ gitea_ssh_port }}
+          Admin:   {{ gitea_admin_user }}
+          Runner:  {{ runner_container_name }} (registered)
+          =======================
+          NEXT STEPS:
+          1. Save API token to vault: vault_gitea_api_token
+          2. Run setup/seed_gitea.yml to create config-service repo
+          3. Run setup/deploy_pypiserver.yml for Lightwell PyPI index

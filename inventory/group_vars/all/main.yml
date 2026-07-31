@@ -25,17 +25,19 @@ demo_app_affected_versions: "< 6.0.2"
 demo_app_fixed_version: "6.0.2"
 demo_app_advisory_id: "RHSA-2026:4890"
 demo_app_name: "config-service"
-demo_app_repo: "https://gitlab.nostromo.io/apps/config-service"
 demo_app_dependency_file: "requirements.txt"
 demo_app_target_branch: "main"
-demo_app_port: 8080
-demo_app_image_registry: "quay.nostromo.io/apps/config-service"
+demo_app_port: 8090
+demo_app_image_registry: "localhost/config-service"
 
-demo_lightwell_pypi_url: "https://pypi.lightwell.redhat.com/simple/"
-demo_ci_pipeline_url: "https://gitlab.nostromo.io"
-demo_ci_project_id: "42"
-demo_gitops_api_url: "https://gitlab.nostromo.io"
+# Gitea (deployed on node2 via setup/deploy_gitea.yml)
+demo_gitea_url: "http://{{ hostvars['node2']['ansible_host'] }}:3000"
+demo_gitea_owner: "demo-admin"
 demo_gitops_auto_merge: true
+gitea_port: 3000
+
+# Lightwell PyPI index (deployed on node2 via setup/deploy_pypiserver.yml)
+demo_lightwell_pypi_url: "http://{{ hostvars['node2']['ansible_host'] }}:8081/simple/"
 
 # =============================================================================
 # RHTPA Configuration

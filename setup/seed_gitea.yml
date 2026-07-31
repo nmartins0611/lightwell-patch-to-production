@@ -1,0 +1,90 @@
+---
+# Setup: Seed Gitea with the config-service demo application
+#
+# Creates the repository in Gitea and pushes the config-service scaffold.
+# Must run AFTER deploy_gitea.yml.
+
+- name: "Setup — Seed Gitea with config-service"
+  hosts: builders
+  gather_facts: false
+  vars:
+    gitea_url: "http://localhost:{{ gitea_port | default(3000) }}"
+    gitea_admin_user: "demo-admin"
+    gitea_admin_password: "{{ vault_gitea_admin_password | default('Demo2026!') }}"
+    app_repo_name: "config-service"
+    app_repo_description: "Demo app for Lightwell app dependency patching"
+    config_service_src: "{{ playbook_dir }}/../demo/config-service"
+
+  tasks:
+    - name: Check if repo already exists
+      ansible.builtin.uri:
+        url: "{{ gitea_url }}/api/v1/repos/{{ gitea_admin_user }}/{{ app_repo_name }}"
+        method: GET
+        user: "{{ gitea_admin_user }}"
+        password: "{{ gitea_admin_password }}"
+        force_basic_auth: true
+        status_code: [200, 404]
+      register: repo_check
+
+    - name: Create repository via API
+      ansible.builtin.uri:
+        url: "{{ gitea_url }}/api/v1/user/repos"
+        method: POST
+        user: "{{ gitea_admin_user }}"
+        password: "{{ gitea_admin_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          name: "{{ app_repo_name }}"
+          description: "{{ app_repo_description }}"
+          private: false
+          auto_init: true
+          default_branch: "main"
+        status_code: [201]
+      when: repo_check.status == 404
+      register: repo_create
+
+    - name: Copy config-service source to builder
+      ansible.builtin.copy:
+        src: "{{ config_service_src }}/"
+        dest: "/tmp/config-service-seed/"
+        mode: "0644"
+
+    - name: Push config-service files to Gitea
+      ansible.builtin.shell:
+        cmd: |
+          cd /tmp/config-service-seed
+          git init
+          git checkout -b main
+          git config user.email "demo@nostromo.io"
+          git config user.name "Demo Setup"
+          git add -A
+          git commit -m "Initial commit: config-service with pyyaml==6.0.1 (vulnerable)"
+          git remote add origin http://{{ gitea_admin_user }}:{{ gitea_admin_password }}@localhost:{{ gitea_port | default(3000) }}/{{ gitea_admin_user }}/{{ app_repo_name }}.git
+          git push -f origin main
+      register: push_result
+
+    - name: Clean up temp directory
+      ansible.builtin.file:
+        path: /tmp/config-service-seed
+        state: absent
+
+    - name: Verify repo has files
+      ansible.builtin.uri:
+        url: "{{ gitea_url }}/api/v1/repos/{{ gitea_admin_user }}/{{ app_repo_name }}/contents/"
+        method: GET
+        user: "{{ gitea_admin_user }}"
+        password: "{{ gitea_admin_password }}"
+        force_basic_auth: true
+        status_code: [200]
+      register: repo_contents
+
+    - name: Display seed result
+      ansible.builtin.debug:
+        msg: |
+          === CONFIG-SERVICE REPO SEEDED ===
+          Repo:  {{ gitea_url }}/{{ gitea_admin_user }}/{{ app_repo_name }}
+          Files: {{ repo_contents.json | map(attribute='name') | list }}
+          Branch: main
+          Dependency: pyyaml==6.0.1 (vulnerable — ready for demo)
+          ===================================

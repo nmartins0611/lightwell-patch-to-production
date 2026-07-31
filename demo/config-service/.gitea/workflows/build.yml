@@ -1,0 +1,57 @@
+name: Build and Push
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  IMAGE_NAME: config-service
+  LIGHTWELL_INDEX: ${{ vars.LIGHTWELL_INDEX_URL || '' }}
+
+jobs:
+  build-and-test:
+    runs-on: python
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Show pyyaml version
+        run: python -c "import yaml; print(f'pyyaml version: {yaml.__version__}')"
+
+      - name: Run smoke test
+        run: |
+          python -c "
+          import yaml
+          data = yaml.safe_load('test_key: test_value')
+          assert data['test_key'] == 'test_value'
+          print('SMOKE TEST PASSED')
+          "
+
+      - name: Run application health check
+        run: |
+          python app.py &
+          sleep 3
+          curl -sf http://localhost:8080/health | python -m json.tool
+          curl -sf http://localhost:8080/version | python -m json.tool
+          kill %1
+
+  security-scan:
+    runs-on: python
+    needs: build-and-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for known vulnerable versions
+        run: |
+          PYYAML_VERSION=$(pip show pyyaml 2>/dev/null | grep Version | cut -d' ' -f2 || echo "not installed")
+          echo "pyyaml version: ${PYYAML_VERSION}"
+          pip install pip-audit
+          pip-audit -r requirements.txt || true

@@ -1,0 +1,101 @@
+---
+# Setup: Deploy pypiserver on Node 2
+#
+# Runs pypiserver in a container to simulate the Lightwell internal
+# PyPI index. Pre-populated with the "fixed" pyyaml wheel.
+#
+# Port: 8081
+
+- name: "Setup — Deploy Lightwell PyPI Index (pypiserver)"
+  hosts: builders
+  become: true
+  gather_facts: true
+  vars:
+    pypi_image: "docker.io/pypiserver/pypiserver:latest"
+    pypi_container_name: "lightwell-pypi"
+    pypi_port: 8081
+    pypi_network: "tcnet"
+    pypi_packages_dir: "/var/lib/lightwell-pypi/packages"
+    lightwell_fixed_package: "pyyaml"
+    lightwell_fixed_version: "6.0.2"
+
+  tasks:
+    - name: Create packages directory
+      ansible.builtin.file:
+        path: "{{ pypi_packages_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Download fixed pyyaml wheel from upstream PyPI
+      ansible.builtin.command:
+        cmd: >-
+          pip download {{ lightwell_fixed_package }}=={{ lightwell_fixed_version }}
+          -d {{ pypi_packages_dir }}
+          --no-deps
+          --python-version 3.11
+          --only-binary :all:
+      register: pip_download
+      changed_when: "'Saved' in pip_download.stdout"
+
+    - name: Also download sdist for broader compatibility
+      ansible.builtin.command:
+        cmd: >-
+          pip download {{ lightwell_fixed_package }}=={{ lightwell_fixed_version }}
+          -d {{ pypi_packages_dir }}
+          --no-deps
+          --no-binary :all:
+      register: pip_download_sdist
+      changed_when: "'Saved' in pip_download_sdist.stdout"
+      failed_when: false
+
+    - name: Deploy pypiserver container
+      containers.podman.podman_container:
+        name: "{{ pypi_container_name }}"
+        image: "{{ pypi_image }}"
+        state: started
+        recreate: false
+        network: "{{ pypi_network }}"
+        ports:
+          - "{{ pypi_port }}:8080"
+        volumes:
+          - "{{ pypi_packages_dir }}:/data/packages:z"
+        command: "run -P . -a . /data/packages"
+      register: pypi_container
+
+    - name: Wait for pypiserver to become ready
+      ansible.builtin.uri:
+        url: "http://localhost:{{ pypi_port }}/simple/"
+        method: GET
+        status_code: [200]
+      register: pypi_health
+      retries: 10
+      delay: 3
+      until: pypi_health.status == 200
+
+    - name: Verify fixed package is served
+      ansible.builtin.uri:
+        url: "http://localhost:{{ pypi_port }}/simple/{{ lightwell_fixed_package }}/"
+        method: GET
+        status_code: [200]
+      register: package_check
+
+    - name: Allow pypiserver through firewall
+      ansible.posix.firewalld:
+        port: "{{ pypi_port }}/tcp"
+        permanent: true
+        immediate: true
+        state: enabled
+
+    - name: Deployment summary
+      ansible.builtin.debug:
+        msg: |
+          === LIGHTWELL PYPI INDEX DEPLOYED ===
+          URL:     http://{{ ansible_host }}:{{ pypi_port }}/simple/
+          Package: {{ lightwell_fixed_package }}=={{ lightwell_fixed_version }}
+
+          Usage in pip:
+            pip install --extra-index-url http://{{ ansible_host }}:{{ pypi_port }}/simple/ {{ lightwell_fixed_package }}=={{ lightwell_fixed_version }}
+
+          Usage in Containerfile:
+            RUN pip install --extra-index-url http://{{ ansible_host }}:{{ pypi_port }}/simple/ -r requirements.txt
+          ======================================

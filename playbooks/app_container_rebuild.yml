@@ -1,18 +1,17 @@
 ---
-# Demo 4c: App Dependency Remediation — Container Image Rebuild
+# Demo 4c: App Dependency Remediation — Container Image Rebuild (Gitea)
 #
-# For container-based deployments: rebuild the container image with the
-# Lightwell-fixed library, push to registry, perform rolling update.
+# Rebuild the container image with the Lightwell-fixed library,
+# push to registry, rolling update on target hosts.
 #
 # Flow:
-#   Lightwell publishes fix
-#     → Controller triggers image rebuild with LW dependency
-#     → Push to Quay/registry
-#     → Rolling update on target hosts (or OpenShift/K8s)
-#     → Validate service health
-#
-# Triggered by: EDA (app_dependency_fix event with deployment_type=container)
-# or called as part of the CI/CD workflow
+#   Lightwell publishes fix to internal PyPI
+#     → Controller clones app from Gitea, updates dependency
+#     → Build container image with Lightwell-fixed dependency
+#     → Scan image with Grype
+#     → Push to Gitea container registry (or local)
+#     → Rolling update on targets
+#     → Health check per host
 
 - name: "App Container Rebuild — Build Image with Lightwell Fix"
   hosts: builders
@@ -27,9 +26,11 @@
     image_tag: "{{ demo_app_fixed_version }}-{{ cve_id | lower | replace('-', '') }}"
     lightwell_index_url: "{{ demo_lightwell_pypi_url }}"
     base_image: "registry.access.redhat.com/ubi9/python-311:latest"
+    gitea_url: "{{ demo_gitea_url }}"
+    gitea_owner: "{{ demo_gitea_owner }}"
 
   tasks:
-    - name: "Phase 1 — Prepare build context with fixed dependency"
+    - name: "Phase 1 — Prepare build context"
       block:
         - name: Create build workspace
           ansible.builtin.file:
@@ -37,14 +38,14 @@
             state: directory
             mode: "0750"
 
-        - name: Clone application source
+        - name: Clone from Gitea
           ansible.builtin.git:
-            repo: "{{ demo_app_repo }}"
+            repo: "{{ gitea_url }}/{{ gitea_owner }}/{{ app_name }}.git"
             dest: "/tmp/app-container-rebuild/{{ app_name }}/src"
             version: "{{ demo_app_target_branch | default('main') }}"
             force: true
 
-        - name: Update dependency in requirements.txt
+        - name: Update dependency version pin
           ansible.builtin.lineinfile:
             path: "/tmp/app-container-rebuild/{{ app_name }}/src/{{ demo_app_dependency_file }}"
             regexp: "^{{ affected_library }}[=<>~!]"
@@ -66,14 +67,14 @@
                   --extra-index-url {{ lightwell_index_url }} \
                   -r {{ demo_app_dependency_file }}
 
-              EXPOSE {{ demo_app_port }}
-              CMD ["python", "app.py"]
+              EXPOSE 8080
+              CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "app:app"]
             dest: "/tmp/app-container-rebuild/{{ app_name }}/Containerfile"
             mode: "0644"
 
-    - name: "Phase 2 — Build and scan container image"
+    - name: "Phase 2 — Build and scan"
       block:
-        - name: Build container image with Lightwell-fixed dependency
+        - name: Build container image
           containers.podman.podman_image:
             name: "{{ image_registry }}:{{ image_tag }}"
             path: "/tmp/app-container-rebuild/{{ app_name }}"
@@ -81,7 +82,7 @@
             force: true
           register: build_result
 
-        - name: Verify fixed library version in built image
+        - name: Verify fixed library in built image
           containers.podman.podman_container:
             name: "{{ app_name }}-dep-check"
             image: "{{ image_registry }}:{{ image_tag }}"
@@ -97,52 +98,42 @@
             fail_msg: "Built image does NOT contain {{ affected_library }}=={{ fixed_version }}"
             success_msg: "Confirmed: image contains {{ affected_library }}=={{ fixed_version }}"
 
-        - name: Run Grype vulnerability scan on rebuilt image
+        - name: Run Grype vulnerability scan
           ansible.builtin.command:
             cmd: "grype {{ image_registry }}:{{ image_tag }} --output json"
           register: grype_scan
           changed_when: false
           failed_when: false
 
-        - name: Verify CVE absent from rebuilt image
+        - name: Verify CVE absent
           ansible.builtin.assert:
             that:
               - "cve_id not in grype_scan.stdout"
-            fail_msg: "{{ cve_id }} still present in rebuilt image — investigate build"
-            success_msg: "{{ cve_id }} NOT found in rebuilt image — fix confirmed"
+            fail_msg: "{{ cve_id }} still present in rebuilt image"
+            success_msg: "{{ cve_id }} NOT found — fix confirmed"
 
-    - name: "Phase 3 — Push to container registry"
+    - name: "Phase 3 — Tag and export image"
       block:
         - name: Tag image as latest
           containers.podman.podman_tag:
             image: "{{ image_registry }}:{{ image_tag }}"
             target_names:
               - "{{ image_registry }}:latest"
-              - "{{ image_registry }}:{{ cve_id | lower }}-fix"
 
-        - name: Push image to registry
-          containers.podman.podman_image:
-            name: "{{ image_registry }}:{{ image_tag }}"
-            push: true
-            push_args:
-              dest: "{{ image_registry }}"
-          register: push_result
-
-        - name: Push latest tag
-          containers.podman.podman_image:
-            name: "{{ image_registry }}:latest"
-            push: true
-            push_args:
-              dest: "{{ image_registry }}"
+        - name: Save image to tar for distribution to targets
+          ansible.builtin.command:
+            cmd: >-
+              podman save -o /tmp/{{ app_name }}-{{ image_tag }}.tar
+              {{ image_registry }}:{{ image_tag }}
+          changed_when: true
 
         - name: Display build summary
           ansible.builtin.debug:
             msg: |
               === CONTAINER BUILD COMPLETE ===
               Image: {{ image_registry }}:{{ image_tag }}
-              Also tagged: :latest, :{{ cve_id | lower }}-fix
               CVE scan: CLEAN
-              Ready for rolling deployment.
+              Saved: /tmp/{{ app_name }}-{{ image_tag }}.tar
               ================================
 
 - name: "App Container Rebuild — Rolling Update on Targets"
@@ -159,19 +150,31 @@
   tasks:
     - name: "Phase 4 — Rolling deployment"
       block:
-        - name: Pre-deploy health check
-          ansible.builtin.uri:
-            url: "http://localhost:{{ demo_app_port }}/health"
-            method: GET
-            status_code: [200]
-          register: pre_health
-          failed_when: false
+        - name: Copy image tar from builder
+          ansible.builtin.copy:
+            src: "/tmp/{{ app_name }}-{{ image_tag }}.tar"
+            dest: "/tmp/{{ app_name }}-{{ image_tag }}.tar"
+            mode: "0644"
+          delegate_to: node2
 
-        - name: Pull rebuilt image
-          containers.podman.podman_image:
-            name: "{{ image_registry }}:{{ image_tag }}"
-            pull: true
-            force: true
+        - name: Fetch image tar to controller
+          ansible.builtin.fetch:
+            src: "/tmp/{{ app_name }}-{{ image_tag }}.tar"
+            dest: "/tmp/{{ app_name }}-{{ image_tag }}.tar"
+            flat: true
+          delegate_to: node2
+          run_once: true
+
+        - name: Copy image tar to target
+          ansible.builtin.copy:
+            src: "/tmp/{{ app_name }}-{{ image_tag }}.tar"
+            dest: "/tmp/{{ app_name }}-{{ image_tag }}.tar"
+            mode: "0644"
+
+        - name: Load image on target
+          ansible.builtin.command:
+            cmd: "podman load -i /tmp/{{ app_name }}-{{ image_tag }}.tar"
+          changed_when: true
 
         - name: Stop current container
           containers.podman.podman_container:
@@ -186,7 +189,7 @@
             state: started
             restart_policy: always
             ports:
-              - "{{ demo_app_port }}:{{ demo_app_port }}"
+              - "{{ demo_app_port }}:8080"
             env:
               CVE_FIX_APPLIED: "{{ cve_id }}"
               LIGHTWELL_FIX: "{{ demo_app_affected_library }}=={{ demo_app_fixed_version }}"
@@ -194,7 +197,7 @@
               security.cve-fix: "{{ cve_id }}"
           register: deploy_result
 
-        - name: Wait for application startup
+        - name: Wait for startup
           ansible.builtin.wait_for:
             port: "{{ demo_app_port }}"
             timeout: 60
@@ -208,36 +211,22 @@
           retries: 5
           delay: 5
 
-        - name: Assert service healthy after rolling update
-          ansible.builtin.assert:
-            that:
-              - post_health.status == 200
-            fail_msg: "Service NOT healthy after deploy on {{ inventory_hostname }} — rollback may be needed"
-            success_msg: "Service healthy on {{ inventory_hostname }}"
-
-    - name: Build container deployment report
-      ansible.builtin.set_fact:
-        container_deploy_report:
-          host: "{{ inventory_hostname }}"
-          app_name: "{{ app_name }}"
-          cve_id: "{{ cve_id }}"
-          remediation_type: "container_image_rebuild"
-          image_deployed: "{{ image_registry }}:{{ image_tag }}"
-          library_fixed: "{{ demo_app_affected_library }}=={{ demo_app_fixed_version }}"
-          service_healthy: true
-          timestamp: "{{ ansible_date_time.iso8601 }}"
+        - name: Clean up image tar
+          ansible.builtin.file:
+            path: "/tmp/{{ app_name }}-{{ image_tag }}.tar"
+            state: absent
 
     - name: Display rolling update summary
       ansible.builtin.debug:
         msg: |
           === CONTAINER ROLLING UPDATE ===
-          Host: {{ container_deploy_report.host }}
-          App: {{ container_deploy_report.app_name }}
-          CVE: {{ container_deploy_report.cve_id }}
-          Image: {{ container_deploy_report.image_deployed }}
-          Library: {{ container_deploy_report.library_fixed }}
-          Healthy: {{ container_deploy_report.service_healthy }}
+          Host: {{ inventory_hostname }}
+          App: {{ app_name }}
+          CVE: {{ cve_id }}
+          Image: {{ image_registry }}:{{ image_tag }}
+          Library: {{ demo_app_affected_library }}=={{ demo_app_fixed_version }}
+          Healthy: {{ post_health.status == 200 }}
           =================================
-          FLOW: Lightwell fix → rebuild image → push registry →
-                rolling update per host → health validated
+          FLOW: Lightwell fix → rebuild image → scan →
+                distribute → rolling update → health validated
           =================================

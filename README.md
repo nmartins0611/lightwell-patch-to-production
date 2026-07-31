@@ -20,11 +20,21 @@ A Python CVE is disclosed (no fix yet). AAP identifies exposure instantly via RH
 
 ## Infrastructure
 
-| Node | Role | Requirements |
-|------|------|--------------|
-| AAP Controller | Orchestration + EDA | Already deployed |
-| Node 1 (RHEL 9) | Target fleet | RHEL 9.3+, subscription |
-| Node 2 (RHEL 9) | RHTPA + Builder | RHEL 9.3+, podman, 4GB+ RAM |
+| Node | Role | Services | Requirements |
+|------|------|----------|--------------|
+| AAP Controller | Orchestration + EDA | Controller, EDA | Already deployed |
+| Node 1, 3, 4 (RHEL 9) | Target fleet | config-service app | RHEL 9.3+, subscription, podman |
+| Node 2 (RHEL 9) | RHTPA + Builder + DevOps | RHTPA, Keycloak, Gitea, pypiserver, nginx | RHEL 9.3+, podman, 8GB+ RAM |
+
+### Node 2 port map
+
+| Port | Service | Purpose |
+|------|---------|---------|
+| 3000 | Gitea | Git forge + CI/CD (Gitea Actions) |
+| 8080 | nginx | Report server |
+| 8081 | pypiserver | Lightwell PyPI index |
+| 8180 | Keycloak | OIDC for RHTPA |
+| 8443 | RHTPA | SBOM storage + CVE correlation |
 
 ## Quick Start
 
@@ -46,8 +56,8 @@ Required vault variables:
 - `vault_controller_password`
 - `vault_registry_username`
 - `vault_registry_password`
-- `vault_ci_api_token` (Demo 4 — CI/CD pipeline access)
-- `vault_gitops_api_token` (Demo 4 — GitOps merge request API)
+- `vault_gitea_admin_password` (Demo 4 — Gitea admin)
+- `vault_gitea_api_token` (Demo 4 — created by deploy_gitea.yml, save to vault after)
 
 ### 2. Install collections
 
@@ -58,10 +68,20 @@ ansible-galaxy collection install -r collections/requirements.yml
 ### 3. Setup environment
 
 ```bash
-# Deploy RHTPA on Node 2
+# Deploy Keycloak + RHTPA on Node 2
+ansible-playbook setup/deploy_keycloak.yml -i inventory/hosts.yml --ask-vault-pass
 ansible-playbook setup/deploy_rhtpa.yml -i inventory/hosts.yml --ask-vault-pass
 
-# Prepare target with vulnerable package
+# Deploy Gitea + act_runner on Node 2 (Demo 4)
+ansible-playbook setup/deploy_gitea.yml -i inventory/hosts.yml --ask-vault-pass
+
+# Deploy Lightwell PyPI index on Node 2 (Demo 4)
+ansible-playbook setup/deploy_pypiserver.yml -i inventory/hosts.yml --ask-vault-pass
+
+# Seed Gitea with the config-service demo app (Demo 4)
+ansible-playbook setup/seed_gitea.yml -i inventory/hosts.yml --ask-vault-pass
+
+# Prepare targets with vulnerable OS package
 ansible-playbook setup/prepare_target.yml -i inventory/hosts.yml --ask-vault-pass
 
 # Install scanning tools on builder
@@ -148,34 +168,75 @@ Lightwell publishes fix to internal PyPI
 
 **Key distinction:** No `dnf update` happens. The fix is *built into* the application artifact via CI/CD. Ansible orchestrates the pipeline, not the package manager.
 
+## Resetting the Demo
+
+Run between demo sessions to revert everything to pre-demo state:
+
+```bash
+# Full reset (all demos)
+ansible-playbook setup/reset_demo.yml -i inventory/hosts.yml --ask-vault-pass
+
+# Reset only OS package demos (1-3)
+ansible-playbook setup/reset_demo.yml -i inventory/hosts.yml --ask-vault-pass --tags os_package
+
+# Reset only app dependency demo (4)
+ansible-playbook setup/reset_demo.yml -i inventory/hosts.yml --ask-vault-pass --tags app_dependency
+
+# Clear reports only
+ansible-playbook setup/reset_demo.yml -i inventory/hosts.yml --ask-vault-pass --tags reports
+```
+
+The reset playbook:
+- Downgrades `python3-cryptography` to the vulnerable version
+- Removes all CME compensating controls
+- Stops and removes `config-service` containers from targets
+- Closes open PRs and deletes `security/*` branches in Gitea
+- Reverts `requirements.txt` to `pyyaml==6.0.1`
+- Clears all SBOM artifacts, reports, and build images
+
 ## Products Highlighted
 
 - **RHTPA** — SBOM storage + instant CVE correlation
 - **Project Lightwell** — Upstream vulnerability resolution (OS packages AND application libraries)
 - **AAP** — Orchestration, EDA, governance, compliance evidence
-- **CI/CD (GitLab/Jenkins/Tekton)** — Application rebuild pipeline (Demo 4)
+- **Gitea** — Git forge with built-in CI/CD (Gitea Actions) for Demo 4
 
 ## Repository Structure
 
 ```
-├── inventory/           Ansible inventory and group vars
-├── rulebooks/           EDA rulebook (webhook listener)
-├── playbooks/           All demo playbooks
-│   ├── sbom_scan_upload.yml       Demo 1 — SBOM baseline
-│   ├── correlate_cve.yml          Demo 1 — CVE correlation
-│   ├── cme_mitigate.yml           Demo 2 — Compensating controls
-│   ├── cme_verify.yml             Demo 2 — Verify controls
-│   ├── container_test.yml         Demo 3 — Container patch test
-│   ├── patch_and_verify.yml       Demo 3 — VM patching (dnf)
-│   ├── close_loop.yml             Demo 3 — Audit trail
-│   ├── app_dependency_remediate.yml   Demo 4a — CI/CD direct
-│   ├── app_gitops_remediate.yml       Demo 4b — GitOps PR
+├── inventory/               Ansible inventory and group vars
+├── rulebooks/               EDA rulebook (webhook listener)
+├── playbooks/               All demo playbooks
+│   ├── sbom_scan_upload.yml           Demo 1 — SBOM baseline
+│   ├── correlate_cve.yml              Demo 1 — CVE correlation
+│   ├── cme_mitigate.yml               Demo 2 — Compensating controls
+│   ├── cme_verify.yml                 Demo 2 — Verify controls
+│   ├── container_test.yml             Demo 3 — Container patch test
+│   ├── patch_and_verify.yml           Demo 3 — VM patching (dnf)
+│   ├── close_loop.yml                 Demo 3 — Audit trail
+│   ├── app_dependency_remediate.yml   Demo 4a — CI/CD direct (Gitea)
+│   ├── app_gitops_remediate.yml       Demo 4b — GitOps PR (Gitea)
 │   └── app_container_rebuild.yml      Demo 4c — Container rebuild
-├── setup/               Environment provisioning
-├── controller/          Controller configuration as code
-├── demo/                Trigger scripts and mock data
-├── execution-environment/  EE build definition
-└── collections/         Required collections manifest
+├── setup/                   Environment provisioning
+│   ├── deploy_keycloak.yml            Keycloak OIDC
+│   ├── deploy_rhtpa.yml               RHTPA server
+│   ├── deploy_gitea.yml               Gitea + act_runner
+│   ├── deploy_pypiserver.yml          Lightwell PyPI index
+│   ├── seed_gitea.yml                 Push config-service to Gitea
+│   ├── deploy_report_server.yml       nginx report server
+│   ├── prepare_target.yml             Target node prep
+│   ├── prepare_builder.yml            Builder node prep
+│   └── reset_demo.yml                 Full demo reset
+├── controller/              Controller configuration as code
+├── demo/                    Trigger scripts and mock data
+│   ├── config-service/                Sample app (pushed to Gitea)
+│   ├── mock_cve_data.json             OS CVE scenario
+│   ├── mock_app_dependency_cve.json   App dependency scenario
+│   ├── trigger_cve_disclosure.sh      Demo 1+2 trigger
+│   ├── trigger_rhsa_available.sh      Demo 3 trigger
+│   └── trigger_app_dependency_fix.sh  Demo 4 trigger (cicd|gitops)
+├── execution-environment/   EE build definition
+└── collections/             Required collections manifest
 ```
 
 ## Presenter Notes: OS vs App Dependencies

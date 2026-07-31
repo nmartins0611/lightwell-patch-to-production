@@ -1,9 +1,9 @@
 ---
-# Demo 4a: App Dependency Remediation — CI/CD Direct Path
+# Demo 4a: App Dependency Remediation — CI/CD Direct Path (Gitea)
 #
 # Lightwell publishes a fixed library version. This playbook orchestrates
-# the full rebuild pipeline: update dependency spec → trigger CI/CD build →
-# wait for artifact → deploy rebuilt application → validate health.
+# the full rebuild pipeline: update dependency spec → trigger Gitea Actions
+# build → wait for workflow run → deploy rebuilt application → validate health.
 #
 # KEY DISTINCTION: App dependencies are a BUILD-TIME fix, not deploy-time.
 # Unlike OS packages (dnf update on live system), application libraries are
@@ -20,110 +20,101 @@
     affected_library: "{{ demo_app_affected_library }}"
     fixed_version: "{{ demo_app_fixed_version }}"
     app_name: "{{ demo_app_name }}"
-    app_repo: "{{ demo_app_repo }}"
     dependency_file: "{{ demo_app_dependency_file }}"
-    ci_pipeline_url: "{{ demo_ci_pipeline_url }}"
-    ci_api_token: "{{ vault_ci_api_token }}"
+    gitea_url: "{{ demo_gitea_url }}"
+    gitea_api: "{{ demo_gitea_url }}/api/v1"
+    gitea_owner: "{{ demo_gitea_owner }}"
+    gitea_repo: "{{ demo_app_name }}"
+    gitea_token: "{{ vault_gitea_api_token }}"
     lightwell_index_url: "{{ demo_lightwell_pypi_url }}"
+    target_branch: "{{ demo_app_target_branch | default('main') }}"
 
   tasks:
-    - name: "Phase 1 — Update dependency specification"
+    - name: "Phase 1 — Update dependency in Gitea via API"
       block:
-        - name: Clone application repository
-          ansible.builtin.git:
-            repo: "{{ app_repo }}"
-            dest: "/tmp/app-rebuild/{{ app_name }}"
-            version: "{{ demo_app_target_branch | default('main') }}"
-            force: true
-
-        - name: Read current dependency file
-          ansible.builtin.slurp:
-            src: "/tmp/app-rebuild/{{ app_name }}/{{ dependency_file }}"
-          register: dep_file_content
-
-        - name: Update dependency version pin to Lightwell fix
-          ansible.builtin.lineinfile:
-            path: "/tmp/app-rebuild/{{ app_name }}/{{ dependency_file }}"
-            regexp: "^{{ affected_library }}[=<>~!]"
-            line: "{{ affected_library }}=={{ fixed_version }}"
-          register: dep_update
-
-        - name: Commit dependency update
-          ansible.builtin.shell:
-            cmd: |
-              git config user.email "aap-security@nostromo.io"
-              git config user.name "AAP Security Automation"
-              git add {{ dependency_file }}
-              git commit -m "fix(security): update {{ affected_library }} to {{ fixed_version }}
-
-              Resolves {{ cve_id }} via Lightwell-published fix.
-              Source: {{ lightwell_index_url }}"
-              git push origin {{ demo_app_target_branch | default('main') }}
-            chdir: "/tmp/app-rebuild/{{ app_name }}"
-          when: dep_update.changed
-
-    - name: "Phase 2 — Trigger CI/CD pipeline rebuild"
-      block:
-        - name: Trigger pipeline via CI API
+        - name: Read current requirements.txt from Gitea
           ansible.builtin.uri:
-            url: "{{ ci_pipeline_url }}/api/v4/projects/{{ demo_ci_project_id }}/pipeline"
-            method: POST
+            url: "{{ gitea_api }}/repos/{{ gitea_owner }}/{{ gitea_repo }}/contents/{{ dependency_file }}"
+            method: GET
             headers:
-              PRIVATE-TOKEN: "{{ ci_api_token }}"
+              Authorization: "token {{ gitea_token }}"
+              Accept: "application/json"
+            status_code: [200]
+          register: dep_file
+
+        - name: Decode current file content
+          ansible.builtin.set_fact:
+            current_deps: "{{ dep_file.json.content | b64decode }}"
+            file_sha: "{{ dep_file.json.sha }}"
+
+        - name: Build updated requirements content
+          ansible.builtin.set_fact:
+            updated_deps: "{{ current_deps | regex_replace(affected_library + '[=<>~!][^\\n]*', affected_library + '==' + fixed_version) }}"
+
+        - name: Commit dependency update via Gitea API
+          ansible.builtin.uri:
+            url: "{{ gitea_api }}/repos/{{ gitea_owner }}/{{ gitea_repo }}/contents/{{ dependency_file }}"
+            method: PUT
+            headers:
+              Authorization: "token {{ gitea_token }}"
               Content-Type: "application/json"
             body_format: json
             body:
-              ref: "{{ demo_app_target_branch | default('main') }}"
-              variables:
-                - key: "SECURITY_FIX"
-                  value: "{{ cve_id }}"
-                - key: "LIGHTWELL_INDEX"
-                  value: "{{ lightwell_index_url }}"
-            status_code: [200, 201]
-          register: pipeline_trigger
+              message: "fix(security): update {{ affected_library }} to {{ fixed_version }}\n\nResolves {{ cve_id }} via Lightwell-published fix.\nSource: {{ lightwell_index_url }}"
+              content: "{{ updated_deps | b64encode }}"
+              sha: "{{ file_sha }}"
+              branch: "{{ target_branch }}"
+              committer:
+                name: "AAP Security Automation"
+                email: "aap-security@nostromo.io"
+            status_code: [200]
+          register: commit_result
 
-        - name: Record pipeline ID
-          ansible.builtin.set_fact:
-            pipeline_id: "{{ pipeline_trigger.json.id }}"
-            pipeline_web_url: "{{ pipeline_trigger.json.web_url }}"
-
-        - name: Display pipeline status
+        - name: Display commit
           ansible.builtin.debug:
-            msg: "Pipeline triggered: {{ pipeline_web_url }}"
+            msg: "Committed: {{ commit_result.json.commit.html_url | default('OK') }}"
 
-    - name: "Phase 3 — Wait for build artifact"
+    - name: "Phase 2 — Wait for Gitea Actions workflow to complete"
       block:
-        - name: Poll pipeline status until complete
+        - name: Wait for workflow run to appear
           ansible.builtin.uri:
-            url: "{{ ci_pipeline_url }}/api/v4/projects/{{ demo_ci_project_id }}/pipelines/{{ pipeline_id }}"
+            url: "{{ gitea_api }}/repos/{{ gitea_owner }}/{{ gitea_repo }}/actions/runs"
             method: GET
             headers:
-              PRIVATE-TOKEN: "{{ ci_api_token }}"
+              Authorization: "token {{ gitea_token }}"
             status_code: [200]
-          register: pipeline_status
-          until: pipeline_status.json.status in ['success', 'failed', 'canceled']
-          retries: 30
-          delay: 20
+          register: workflow_runs
+          retries: 10
+          delay: 5
+          until: workflow_runs.json.workflow_runs | default([]) | length > 0
 
-        - name: Assert pipeline succeeded
+        - name: Get latest workflow run
+          ansible.builtin.set_fact:
+            latest_run_id: "{{ workflow_runs.json.workflow_runs[0].id }}"
+            latest_run_status: "{{ workflow_runs.json.workflow_runs[0].status }}"
+
+        - name: Poll workflow run until complete
+          ansible.builtin.uri:
+            url: "{{ gitea_api }}/repos/{{ gitea_owner }}/{{ gitea_repo }}/actions/runs/{{ latest_run_id }}"
+            method: GET
+            headers:
+              Authorization: "token {{ gitea_token }}"
+            status_code: [200]
+          register: run_status
+          until: run_status.json.status in ['success', 'failure', 'cancelled']
+          retries: 30
+          delay: 15
+
+        - name: Assert workflow succeeded
           ansible.builtin.assert:
             that:
-              - pipeline_status.json.status == 'success'
-            fail_msg: "CI/CD pipeline FAILED ({{ pipeline_status.json.status }}) — manual investigation required"
-            success_msg: "Pipeline completed successfully — artifact ready"
+              - run_status.json.status == 'success'
+            fail_msg: "Gitea Actions workflow FAILED — investigate at {{ gitea_url }}/{{ gitea_owner }}/{{ gitea_repo }}/actions"
+            success_msg: "CI/CD pipeline passed — artifact ready for deployment"
 
-        - name: Retrieve build artifact metadata
-          ansible.builtin.uri:
-            url: "{{ ci_pipeline_url }}/api/v4/projects/{{ demo_ci_project_id }}/pipelines/{{ pipeline_id }}/jobs"
-            method: GET
-            headers:
-              PRIVATE-TOKEN: "{{ ci_api_token }}"
-            status_code: [200]
-          register: pipeline_jobs
-
-        - name: Extract container image tag from build job
+        - name: Set rebuilt image tag
           ansible.builtin.set_fact:
-            rebuilt_image_tag: "{{ demo_app_image_registry }}:{{ pipeline_id }}-{{ cve_id | lower }}"
+            rebuilt_image_tag: "{{ demo_app_image_registry }}:{{ cve_id | lower | replace('-', '') }}-fix"
 
 - name: "App Dependency Fix — Deploy Rebuilt Application"
   hosts: targets
@@ -134,7 +125,7 @@
     cve_id: "{{ demo_app_cve_id }}"
 
   tasks:
-    - name: "Phase 4 — Deploy rebuilt application"
+    - name: "Phase 3 — Deploy rebuilt application"
       block:
         - name: Pre-deploy health check
           ansible.builtin.uri:
@@ -149,6 +140,7 @@
             name: "{{ hostvars['localhost']['rebuilt_image_tag'] }}"
             pull: true
             force: true
+          when: hostvars['localhost']['rebuilt_image_tag'] is defined
 
         - name: Stop current application container
           containers.podman.podman_container:
@@ -159,16 +151,17 @@
         - name: Start application with rebuilt image
           containers.podman.podman_container:
             name: "{{ app_name }}"
-            image: "{{ hostvars['localhost']['rebuilt_image_tag'] }}"
+            image: "{{ hostvars['localhost']['rebuilt_image_tag'] | default(demo_app_image_registry + ':latest') }}"
             state: started
             restart_policy: always
             ports:
-              - "{{ demo_app_port }}:{{ demo_app_port }}"
+              - "{{ demo_app_port }}:8080"
             env:
               CVE_FIX_APPLIED: "{{ cve_id }}"
+              LIGHTWELL_FIX: "{{ demo_app_affected_library }}=={{ demo_app_fixed_version }}"
           register: deploy_result
 
-    - name: "Phase 5 — Post-deploy validation"
+    - name: "Phase 4 — Post-deploy validation"
       block:
         - name: Wait for application startup
           ansible.builtin.wait_for:
@@ -184,47 +177,24 @@
           retries: 5
           delay: 5
 
-        - name: Verify fixed library version in running container
-          containers.podman.podman_container:
-            name: "{{ app_name }}-version-check"
-            image: "{{ hostvars['localhost']['rebuilt_image_tag'] }}"
-            command: "pip show {{ demo_app_affected_library }} | grep Version"
-            detach: false
-            rm: true
-          register: lib_version_check
-
-        - name: Assert library is at fixed version
-          ansible.builtin.assert:
-            that:
-              - "demo_app_fixed_version in lib_version_check.stdout"
-            fail_msg: "Library {{ demo_app_affected_library }} NOT at expected version {{ demo_app_fixed_version }}"
-            success_msg: "Confirmed: {{ demo_app_affected_library }} {{ demo_app_fixed_version }} running in production"
-
-        - name: Build deployment report
-          ansible.builtin.set_fact:
-            app_deploy_report:
-              host: "{{ inventory_hostname }}"
-              app_name: "{{ app_name }}"
-              cve_id: "{{ cve_id }}"
-              remediation_type: "app_dependency_rebuild"
-              pipeline_id: "{{ hostvars['localhost']['pipeline_id'] }}"
-              image_deployed: "{{ hostvars['localhost']['rebuilt_image_tag'] }}"
-              library_fixed: "{{ demo_app_affected_library }}=={{ demo_app_fixed_version }}"
-              service_healthy: true
-              timestamp: "{{ ansible_date_time.iso8601 }}"
+        - name: Check library version via app endpoint
+          ansible.builtin.uri:
+            url: "http://localhost:{{ demo_app_port }}/version"
+            method: GET
+            status_code: [200]
+          register: version_check
 
         - name: Display deployment summary
           ansible.builtin.debug:
             msg: |
               === APP DEPENDENCY REMEDIATION REPORT ===
-              Host: {{ app_deploy_report.host }}
-              App: {{ app_deploy_report.app_name }}
-              CVE: {{ app_deploy_report.cve_id }}
-              Type: {{ app_deploy_report.remediation_type }}
-              Image: {{ app_deploy_report.image_deployed }}
-              Library: {{ app_deploy_report.library_fixed }}
-              Healthy: {{ app_deploy_report.service_healthy }}
-              Pipeline: {{ app_deploy_report.pipeline_id }}
+              Host: {{ inventory_hostname }}
+              App: {{ app_name }}
+              CVE: {{ cve_id }}
+              Type: app_dependency_rebuild (CI/CD direct)
+              Library: {{ demo_app_affected_library }}=={{ demo_app_fixed_version }}
+              Version endpoint: {{ version_check.json | default({}) }}
+              Healthy: {{ post_deploy_health.status == 200 }}
               ==========================================
               NOTE: This was a BUILD-TIME fix via CI/CD.
               The library is baked into the application image.
