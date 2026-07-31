@@ -6,6 +6,18 @@
 
 A Python CVE is disclosed (no fix yet). AAP identifies exposure instantly via RHTPA, mitigates with compensating controls. Lightwell resolves it upstream. AAP tests in a container, patches VMs under governance, and proves the loop is closed.
 
+**Demo 4** extends this with the *application dependency* scenario — where the vulnerable library is baked into an application (not installed via RPM on a host). The fix goes through CI/CD rebuild, not `dnf update`.
+
+## Two Remediation Models
+
+| | OS Package (Demo 1-3) | App Dependency (Demo 4) |
+|---|---|---|
+| **Where the vuln lives** | RPM on the host filesystem | Library inside application artifact |
+| **How Lightwell publishes fix** | RHSA → dnf repository | Fixed package → internal PyPI/Maven |
+| **How you apply it** | `dnf update` on live system | Rebuild application via CI/CD |
+| **Ansible's role** | Orchestrate patch + verify | Trigger rebuild pipeline + deploy + verify |
+| **When it's fixed** | After package install | After application redeploy |
+
 ## Infrastructure
 
 | Node | Role | Requirements |
@@ -34,6 +46,8 @@ Required vault variables:
 - `vault_controller_password`
 - `vault_registry_username`
 - `vault_registry_password`
+- `vault_ci_api_token` (Demo 4 — CI/CD pipeline access)
+- `vault_gitops_api_token` (Demo 4 — GitOps merge request API)
 
 ### 2. Install collections
 
@@ -69,14 +83,18 @@ ansible-playbook playbooks/sbom_scan_upload.yml -i inventory/hosts.yml --ask-vau
 ### 6. Run the demos
 
 ```bash
-# Demo 1+2: CVE disclosed, no fix yet
+# Demo 1+2: CVE disclosed, no fix yet (OS package)
 export EDA_HOST=your-eda-host
 ./demo/trigger_cve_disclosure.sh
 
 # (wait for workflow to complete)
 
-# Demo 3: Lightwell resolves it
+# Demo 3: Lightwell resolves it (OS package — dnf update)
 ./demo/trigger_rhsa_available.sh
+
+# Demo 4: Lightwell resolves app dependency (CI/CD rebuild)
+./demo/trigger_app_dependency_fix.sh cicd    # Direct CI/CD path
+./demo/trigger_app_dependency_fix.sh gitops  # GitOps PR path
 ```
 
 ## Demo Flow
@@ -87,14 +105,55 @@ CVE notification → EDA → query RHTPA → map to inventory → exposure repor
 ### Demo 2: "Compensate While We Wait" (~15 min)
 CME controls → SELinux + firewall + detection → verify → posture report
 
-### Demo 3: "Lightwell Fixes It" (~20 min)
+### Demo 3: "Lightwell Fixes It — OS Package" (~20 min)
 RHSA notification → container test → staged VM patch → verify → RHTPA updated → controls removed → audit trail
+
+**Remediation:** `dnf update` installs the fixed RPM directly on the host.
+
+### Demo 4: "Lightwell Fixes It — App Dependency" (~25 min)
+
+Lightwell publishes the fixed library to an internal package index. The application must be **rebuilt** with the fixed dependency and **redeployed**.
+
+Three workflow variants:
+
+#### 4a: CI/CD Direct
+```
+Lightwell publishes fix to internal PyPI
+  → Controller updates dependency pin in requirements.txt
+  → Triggers CI/CD pipeline rebuild
+  → Waits for build artifact
+  → Deploys rebuilt application to targets
+  → Validates service health
+```
+
+#### 4b: GitOps PR
+```
+Lightwell publishes fix to internal PyPI
+  → Controller opens PR updating dependency version
+  → CI runs automatically (build + test + scan)
+  → PR merged (auto or manual)
+  → CD deploys the rebuilt application
+  → Ansible validates post-deploy health
+```
+
+#### 4c: Container Image Rebuild
+```
+Lightwell publishes fix to internal PyPI
+  → Controller triggers container image rebuild
+  → Image built with Lightwell-fixed dependency
+  → Pushed to Quay registry
+  → Rolling update deployed to targets
+  → Health check per host
+```
+
+**Key distinction:** No `dnf update` happens. The fix is *built into* the application artifact via CI/CD. Ansible orchestrates the pipeline, not the package manager.
 
 ## Products Highlighted
 
 - **RHTPA** — SBOM storage + instant CVE correlation
-- **Project Lightwell** — Upstream vulnerability resolution
+- **Project Lightwell** — Upstream vulnerability resolution (OS packages AND application libraries)
 - **AAP** — Orchestration, EDA, governance, compliance evidence
+- **CI/CD (GitLab/Jenkins/Tekton)** — Application rebuild pipeline (Demo 4)
 
 ## Repository Structure
 
@@ -102,9 +161,34 @@ RHSA notification → container test → staged VM patch → verify → RHTPA up
 ├── inventory/           Ansible inventory and group vars
 ├── rulebooks/           EDA rulebook (webhook listener)
 ├── playbooks/           All demo playbooks
+│   ├── sbom_scan_upload.yml       Demo 1 — SBOM baseline
+│   ├── correlate_cve.yml          Demo 1 — CVE correlation
+│   ├── cme_mitigate.yml           Demo 2 — Compensating controls
+│   ├── cme_verify.yml             Demo 2 — Verify controls
+│   ├── container_test.yml         Demo 3 — Container patch test
+│   ├── patch_and_verify.yml       Demo 3 — VM patching (dnf)
+│   ├── close_loop.yml             Demo 3 — Audit trail
+│   ├── app_dependency_remediate.yml   Demo 4a — CI/CD direct
+│   ├── app_gitops_remediate.yml       Demo 4b — GitOps PR
+│   └── app_container_rebuild.yml      Demo 4c — Container rebuild
 ├── setup/               Environment provisioning
 ├── controller/          Controller configuration as code
 ├── demo/                Trigger scripts and mock data
 ├── execution-environment/  EE build definition
 └── collections/         Required collections manifest
 ```
+
+## Presenter Notes: OS vs App Dependencies
+
+When presenting Demo 4, emphasize this distinction:
+
+> **OS-level vulnerability (Demos 1-3):**
+> Lightwell produces a fixed RPM → Red Hat publishes RHSA → you run `dnf update` on the host → done.
+> The package manager handles it at deploy-time on the live system.
+>
+> **Application dependency (Demo 4):**
+> Lightwell produces a fixed library (e.g., PyPI package) → you update the version pin in your source code → CI/CD rebuilds the entire application → you deploy the new build.
+> The fix goes through the build pipeline. You can't just `pip install` on a running container.
+>
+> **Why it matters:**
+> Most real-world vulnerabilities today are in application dependencies (Log4j, Spring4Shell, etc.), not OS packages. Showing that Lightwell + AAP handles *both* models — host patching AND application rebuild pipelines — demonstrates complete coverage.

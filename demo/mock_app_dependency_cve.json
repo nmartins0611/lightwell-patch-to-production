@@ -1,0 +1,50 @@
+{
+  "cve_id": "CVE-2026-52891",
+  "description": "Deserialization of untrusted data in PyYAML full_load() allows arbitrary code execution. Applications using yaml.full_load() on untrusted input permit construction of arbitrary Python objects, leading to remote code execution.",
+  "affected_library": "pyyaml",
+  "affected_ecosystem": "pypi",
+  "affected_versions": "< 6.0.2",
+  "fixed_version": "6.0.2",
+  "advisory_id": "RHSA-2026:4890",
+  "cvss": {
+    "version": "3.1",
+    "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "base_score": 9.8,
+    "severity": "Critical"
+  },
+  "cwe_ids": ["CWE-502"],
+  "cwe_descriptions": {
+    "CWE-502": "Deserialization of Untrusted Data"
+  },
+  "attack_vector": "Network",
+  "attack_complexity": "Low",
+  "privileges_required": "None",
+  "user_interaction": "None",
+  "scope": "Unchanged",
+  "affected_applications": [
+    {
+      "name": "config-service",
+      "repo": "https://gitlab.nostromo.io/apps/config-service",
+      "dependency_file": "requirements.txt",
+      "dependency_line": "pyyaml==6.0.1",
+      "deployment_type": "container",
+      "image_registry": "quay.nostromo.io/apps/config-service",
+      "deployed_on": ["node1", "node3"]
+    }
+  ],
+  "lightwell_resolution": {
+    "resolved": true,
+    "resolution_date": "2026-07-30T15:00:00Z",
+    "upstream_commit": "https://github.com/yaml/pyyaml/commit/def789abc123",
+    "published_to": "https://pypi.lightwell.redhat.com/simple/pyyaml/",
+    "engineers_involved": 2,
+    "time_to_fix_hours": 8
+  },
+  "timeline": {
+    "discovered": "2026-07-30T06:00:00Z",
+    "disclosed": "2026-07-30T10:00:00Z",
+    "lightwell_resolved": "2026-07-30T15:00:00Z",
+    "package_published": "2026-07-30T15:30:00Z"
+  },
+  "remediation_note": "This is an APPLICATION dependency — fix requires rebuilding the application with the patched library, not a dnf update on hosts. Lightwell publishes the fixed package to an internal PyPI index. The application must be rebuilt via CI/CD and redeployed."
+}
