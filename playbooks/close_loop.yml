@@ -11,6 +11,8 @@
   hosts: localhost
   connection: local
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   vars:
     cve_id: "{{ demo_cve_id }}"
     postpatch_sbom_dir: "{{ sbom_output_dir }}/postpatch"
@@ -71,6 +73,8 @@
   hosts: targets
   become: true
   gather_facts: false
+  vars_files:
+    - ../vars/vault.yml
   vars:
     cve_id: "{{ demo_cve_id }}"
     mitigation_tag: "cme_{{ cve_id | replace('-', '_') }}"
@@ -124,6 +128,8 @@
   hosts: localhost
   connection: local
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   vars:
     cve_id: "{{ demo_cve_id }}"
     advisory_id: "{{ demo_advisory_id }}"

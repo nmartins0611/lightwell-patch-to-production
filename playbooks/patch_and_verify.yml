@@ -11,6 +11,8 @@
   hosts: targets
   become: true
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   serial: "{{ patch_serial | default('100%') }}"
   vars:
     cve_id: "{{ demo_cve_id }}"

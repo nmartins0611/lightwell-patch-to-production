@@ -11,6 +11,8 @@
   hosts: builders
   become: true
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   vars:
     cve_id: "{{ demo_cve_id }}"
     advisory_id: "{{ demo_advisory_id }}"

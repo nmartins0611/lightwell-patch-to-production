@@ -17,6 +17,8 @@
   hosts: builders
   become: true
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   vars:
     cve_id: "{{ demo_app_cve_id }}"
     affected_library: "{{ demo_app_affected_library }}"
@@ -140,6 +142,8 @@
   hosts: targets
   become: true
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   serial: 1
   vars:
     app_name: "{{ demo_app_name }}"

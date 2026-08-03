@@ -9,6 +9,8 @@
 - name: "SBOM Scan — Generate CycloneDX on targets"
   hosts: targets
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   vars:
     sbom_format: "cyclonedx-json@1.6"
     sbom_output: "{{ sbom_output_dir }}/{{ inventory_hostname }}-sbom.json"
@@ -38,6 +40,8 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  vars_files:
+    - ../vars/vault.yml
   vars:
     fetched_sbom_dir: "{{ sbom_output_dir }}/fetched"
 

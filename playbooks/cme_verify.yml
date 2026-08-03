@@ -10,6 +10,8 @@
   hosts: targets
   become: true
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   vars:
     cve_id: "{{ demo_cve_id }}"
     mitigation_tag: "cme_{{ cve_id | replace('-', '_') }}"
@@ -83,6 +85,8 @@
   hosts: localhost
   connection: local
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   tasks:
     - name: Aggregate verification results
       ansible.builtin.set_fact:

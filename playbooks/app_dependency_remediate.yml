@@ -122,6 +122,8 @@
   hosts: targets
   become: true
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   vars:
     app_name: "{{ demo_app_name }}"
     cve_id: "{{ demo_app_cve_id }}"

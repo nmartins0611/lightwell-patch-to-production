@@ -13,6 +13,8 @@
   hosts: targets
   become: true
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   vars:
     cve_id: "{{ demo_cve_id }}"
     affected_package: "{{ demo_cve_package }}"
