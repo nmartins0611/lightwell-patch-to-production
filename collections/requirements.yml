@@ -1,8 +1,0 @@
----
-collections:
-  - name: ansible.controller
-  - name: ansible.posix
-  - name: community.general
-  - name: https://github.com/nmartins0611/cme.git#collection/
-    type: git
-    version: main
