@@ -34,7 +34,7 @@ A Python CVE is disclosed (no fix yet). AAP identifies exposure instantly via RH
 | 8080 | nginx | Report server |
 | 8081 | pypiserver | Lightwell PyPI index |
 | 8180 | Keycloak | OIDC for RHTPA |
-| 8443 | RHTPA | SBOM storage + CVE correlation |
+| 8443 | RHTPA (HTTPS) | SBOM storage + CVE correlation |
 
 ## Quick Start
 

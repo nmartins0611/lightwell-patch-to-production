@@ -20,6 +20,8 @@
   hosts: localhost
   connection: local
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   vars:
     cve_id: "{{ demo_app_cve_id }}"
     affected_library: "{{ demo_app_affected_library }}"

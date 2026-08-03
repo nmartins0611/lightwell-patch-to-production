@@ -182,6 +182,8 @@
   hosts: builders
   gather_facts: false
   tags: [gitea, app_dependency, all_demos]
+  vars_files:
+    - ../vars/vault.yml
   vars:
     gitea_url: "http://localhost:{{ gitea_port | default(3000) }}"
     gitea_admin_user: "demo-admin"

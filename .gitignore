@@ -1,6 +1,7 @@
-# Vault files
-**/vault.yml
-**/*vault*
+# Vault files (unencrypted)
+# Encrypted vault.yml in vars/ is intentionally tracked
+inventory/**/vault.yml
+inventory/**/*vault*
 
 # TLS certificates and keys (generated for RHTPA)
 certs/

@@ -7,6 +7,8 @@
 - name: "Setup — Deploy Red Hat Trusted Profile Analyzer"
   hosts: builders
   gather_facts: false
+  vars_files:
+    - ../vars/vault.yml
   vars:
     rhtpa_image: "registry.redhat.io/rhtpa/rhtpa-trustification-service-rhel9:b56c0e43a5a9d8880400507a54bd1c4e9f31dc88"
     rhtpa_network: "tcnet"
@@ -20,7 +22,7 @@
     pg_db_password: "demo-user-2026"
     keycloak_container_name: "keycloak"
     keycloak_realm: "trustification"
-    keycloak_issuer_url: "http://{{ keycloak_container_name }}:8080/realms/{{ keycloak_realm }}"
+    keycloak_issuer_url: "http://{{ keycloak_container_name }}:{{ keycloak_port | default(8080) }}/realms/{{ keycloak_realm }}"
 
   tasks:
     - name: Ensure podman is installed

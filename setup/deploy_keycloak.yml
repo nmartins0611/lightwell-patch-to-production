@@ -38,9 +38,10 @@
         env:
           KC_BOOTSTRAP_ADMIN_USERNAME: "{{ keycloak_admin_user }}"
           KC_BOOTSTRAP_ADMIN_PASSWORD: "{{ keycloak_admin_password }}"
-          KC_HOSTNAME: "http://{{ keycloak_container_name }}:8080"
+          KC_HOSTNAME: "http://{{ ansible_host }}:{{ keycloak_port }}"
           KC_HOSTNAME_STRICT: "false"
           KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+          KC_HTTP_ENABLED: "true"
         command: start-dev
       register: kc_container
 

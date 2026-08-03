@@ -9,13 +9,15 @@
 #   3000 — Gitea web UI + API + Git HTTP
 #   8081 — pypiserver (Lightwell PyPI index)
 #   8180 — Keycloak
-#   8443 — RHTPA API
+#   8090 — RHTPA API
 #   8080 — nginx report server
 
 - name: "Setup — Deploy Gitea + act_runner"
   hosts: builders
   become: true
   gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
   vars:
     gitea_image: "docker.io/gitea/gitea:latest"
     gitea_container_name: "gitea"
@@ -51,7 +53,6 @@
               - "{{ gitea_ssh_port }}:22"
             volumes:
               - "{{ gitea_data_volume }}:/data:Z"
-              - "/etc/timezone:/etc/timezone:ro"
               - "/etc/localtime:/etc/localtime:ro"
             env:
               GITEA__server__ROOT_URL: "http://{{ ansible_host }}:{{ gitea_port }}/"
@@ -64,16 +65,59 @@
               GITEA__repository__ENABLE_PUSH_CREATE_ORG: "true"
               GITEA__api__ENABLE_SWAGGER: "true"
               GITEA__packages__ENABLED: "true"
+              GITEA__install__INSTALL_LOCK: "true"
           register: gitea_container
 
-        - name: Wait for Gitea to become ready
+        - name: Wait for Gitea HTTP to respond
+          ansible.builtin.uri:
+            url: "http://localhost:{{ gitea_port }}/"
+            method: GET
+            status_code: [200, 404, 405]
+            follow_redirects: none
+          register: gitea_http
+          retries: 30
+          delay: 5
+          until: gitea_http.status is defined
+
+        - name: Check if Gitea needs initial install
+          ansible.builtin.uri:
+            url: "http://localhost:{{ gitea_port }}/api/v1/version"
+            method: GET
+            status_code: [200, 404]
+          register: gitea_api_check
+
+        - name: Complete Gitea install (first run only)
+          ansible.builtin.uri:
+            url: "http://localhost:{{ gitea_port }}/"
+            method: POST
+            body_format: form-urlencoded
+            body:
+              db_type: "sqlite3"
+              db_path: "/data/gitea/gitea.db"
+              app_name: "Gitea"
+              repo_root_path: "/data/git/repositories"
+              lfs_root_path: "/data/git/lfs"
+              run_user: "git"
+              domain: "{{ ansible_host }}"
+              ssh_port: "22"
+              http_port: "3000"
+              app_url: "http://{{ ansible_host }}:{{ gitea_port }}/"
+              log_root_path: "/data/gitea/log"
+              admin_name: "{{ gitea_admin_user }}"
+              admin_passwd: "{{ gitea_admin_password }}"
+              admin_confirm_passwd: "{{ gitea_admin_password }}"
+              admin_email: "{{ gitea_admin_email }}"
+            status_code: [200, 302]
+          when: gitea_api_check.status == 404
+
+        - name: Wait for Gitea API after install
           ansible.builtin.uri:
             url: "http://localhost:{{ gitea_port }}/api/v1/version"
             method: GET
             status_code: [200]
           register: gitea_health
-          retries: 30
-          delay: 5
+          retries: 15
+          delay: 3
           until: gitea_health.status == 200
 
         - name: Check if admin user exists
@@ -108,7 +152,7 @@
               name: "aap-automation"
               scopes:
                 - "all"
-            status_code: [201, 422]
+            status_code: [201, 400, 422]
           register: token_result
 
         - name: Store API token
@@ -132,8 +176,8 @@
 
         - name: Generate runner registration token
           ansible.builtin.uri:
-            url: "http://localhost:{{ gitea_port }}/api/v1/admin/runners/registration-token"
-            method: GET
+            url: "http://localhost:{{ gitea_port }}/api/v1/admin/actions/runners/registration-token"
+            method: POST
             user: "{{ gitea_admin_user }}"
             password: "{{ gitea_admin_password }}"
             force_basic_auth: true
@@ -148,7 +192,7 @@
               runner:
                 file: .runner
                 capacity: 1
-                timeout: 3600
+                timeout: "1h"
                 labels:
                   - "ubuntu-latest:docker://node:20-bookworm"
                   - "python:docker://python:3.11-slim"
@@ -168,11 +212,14 @@
             image: "{{ runner_image }}"
             state: started
             recreate: true
+            user: root
+            security_opt:
+              - "label=disable"
             network: "{{ gitea_network }}"
             volumes:
-              - "{{ runner_data_volume }}:/data:Z"
-              - "/tmp/gitea-runner-config.yaml:/config.yaml:ro,Z"
-              - "/run/podman/podman.sock:/var/run/docker.sock:Z"
+              - "{{ runner_data_volume }}:/data"
+              - "/tmp/gitea-runner-config.yaml:/config.yaml:ro"
+              - "/run/podman/podman.sock:/var/run/docker.sock"
             env:
               GITEA_INSTANCE_URL: "http://{{ gitea_container_name }}:3000"
               GITEA_RUNNER_REGISTRATION_TOKEN: "{{ runner_token.json.token }}"
@@ -182,7 +229,7 @@
 
         - name: Wait for runner to register
           ansible.builtin.uri:
-            url: "http://localhost:{{ gitea_port }}/api/v1/admin/runners"
+            url: "http://localhost:{{ gitea_port }}/api/v1/admin/actions/runners"
             method: GET
             user: "{{ gitea_admin_user }}"
             password: "{{ gitea_admin_password }}"

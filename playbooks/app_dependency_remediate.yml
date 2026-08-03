@@ -13,6 +13,8 @@
 
 - name: "App Dependency Fix — CI/CD Rebuild Pipeline"
   hosts: localhost
+  vars_files:
+    - ../vars/vault.yml
   connection: local
   gather_facts: true
   vars:
