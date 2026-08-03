@@ -87,3 +87,34 @@
     - name: Report upload status
       ansible.builtin.debug:
         msg: "Uploaded {{ upload_results.results | length }} SBOMs to RHTPA"
+
+    - name: Check if demo advisory already exists
+      ansible.builtin.uri:
+        url: "{{ rhtpa_api_endpoint }}/api/v2/advisory"
+        method: GET
+        headers:
+          Accept: "application/json"
+          Authorization: "Bearer {{ token_response.json.access_token }}"
+        status_code: [200]
+        validate_certs: false
+      register: advisory_check
+
+    - name: Upload mock CVE advisory to RHTPA
+      ansible.builtin.uri:
+        url: "{{ rhtpa_api_endpoint }}/api/v2/advisory"
+        method: POST
+        src: "{{ playbook_dir }}/../demo/mock_vex_cve-2026-51234.json"
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ token_response.json.access_token }}"
+        status_code: [200, 201, 202]
+        validate_certs: false
+      when: advisory_check.json.total | int == 0
+      register: advisory_upload
+
+    - name: Advisory upload status
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'Advisory RHSA-2026:4521 uploaded to RHTPA'
+             if advisory_upload is changed else
+             'Advisory already present in RHTPA (' ~ advisory_check.json.total ~ ' advisories)' }}
