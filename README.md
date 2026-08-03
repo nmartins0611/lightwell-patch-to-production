@@ -24,13 +24,14 @@ A Python CVE is disclosed (no fix yet). AAP identifies exposure instantly via RH
 |------|------|----------|--------------|
 | AAP Controller | Orchestration + EDA | Controller, EDA | Already deployed |
 | Node 1, 3, 4 (RHEL 9) | Target fleet | config-service app | RHEL 9.3+, subscription, podman |
-| Node 2 (RHEL 9) | RHTPA + Builder + DevOps | RHTPA, Keycloak, Gitea, pypiserver, nginx | RHEL 9.3+, podman, 8GB+ RAM |
+| Node 2 (RHEL 9) | RHTPA + Builder + DevOps | RHTPA, Keycloak, Gitea, CME MCP, pypiserver, nginx | RHEL 9.3+, podman, 8GB+ RAM |
 
 ### Node 2 port map
 
 | Port | Service | Purpose |
 |------|---------|---------|
 | 3000 | Gitea | Git forge + CI/CD (Gitea Actions) |
+| 8000 | CME MCP | Defensive control taxonomy + CVSS attenuation |
 | 8080 | nginx | Report server |
 | 8081 | pypiserver | Lightwell PyPI index |
 | 8180 | Keycloak | OIDC for RHTPA |
@@ -123,7 +124,7 @@ export EDA_HOST=your-eda-host
 CVE notification → EDA → query RHTPA → map to inventory → exposure report
 
 ### Demo 2: "Compensate While We Wait" (~15 min)
-CME controls → SELinux + firewall + detection → verify → posture report
+CME MCP query → dynamic control profile → PRE verify → remediate → POST verify → CVSS attenuation scoring → posture report
 
 ### Demo 3: "Lightwell Fixes It — OS Package" (~20 min)
 RHSA notification → container test → staged VM patch → verify → RHTPA updated → controls removed → audit trail
@@ -198,6 +199,7 @@ The reset playbook:
 
 - **RHTPA** — SBOM storage + instant CVE correlation
 - **Project Lightwell** — Upstream vulnerability resolution (OS packages AND application libraries)
+- **CME** — Defensive control taxonomy, CVE-to-control mapping, CVSS attenuation scoring via MCP
 - **AAP** — Orchestration, EDA, governance, compliance evidence
 - **Gitea** — Git forge with built-in CI/CD (Gitea Actions) for Demo 4
 

@@ -23,6 +23,35 @@
     demo_scm_url: "https://github.com/nmartins0611/lightwell-patch-to-production.git"
 
   tasks:
+    - name: Create CME MCP custom credential type
+      ansible.controller.credential_type:
+        name: "CME MCP Endpoint"
+        kind: cloud
+        inputs:
+          fields:
+            - id: cme_mcp_endpoint
+              type: string
+              label: CME MCP Server URL
+          required:
+            - cme_mcp_endpoint
+        injectors:
+          extra_vars:
+            cme_mcp_endpoint: "{%raw%}{{ cme_mcp_endpoint }}{%endraw%}"
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
+    - name: Create CME MCP credential
+      ansible.controller.credential:
+        name: "CME MCP Server"
+        organization: "{{ demo_org }}"
+        credential_type: "CME MCP Endpoint"
+        inputs:
+          cme_mcp_endpoint: "{{ cme_mcp_endpoint }}"
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
     - name: Create machine credential
       ansible.controller.credential:
         name: "{{ demo_credential }}"
@@ -108,6 +137,8 @@
         inventory: "{{ demo_inventory }}"
         credentials:
           - "{{ demo_credential }}"
+          - "CME MCP Server"
+        become_enabled: true
         ask_variables_on_launch: true
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
@@ -122,6 +153,8 @@
         inventory: "{{ demo_inventory }}"
         credentials:
           - "{{ demo_credential }}"
+          - "CME MCP Server"
+        become_enabled: true
         ask_variables_on_launch: true
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
@@ -366,5 +399,7 @@
           Controller configured:
           - 12 Job Templates (7 original + 4 Demo 4 + Reset)
           - 4 Workflow Templates (2 original + 2 Demo 4)
+          - 1 Custom Credential Type (CME MCP Endpoint)
+          - 2 Credentials (Machine + CME MCP)
           - 1 Project (SCM-synced)
           - 1 Inventory with SCM source

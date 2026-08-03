@@ -1,121 +1,173 @@
 ---
-# Demo 2: CME Compensating Controls — Mitigate While Waiting for Fix
+# Demo 2, Phase 1: CME Compensating Controls — Mitigate While Waiting for Fix
 #
-# Applies compensating controls to affected hosts to raise exploitation
-# complexity while no upstream patch is available. Controls are:
-# 1. SELinux: confine the vulnerable service more tightly
-# 2. Firewall: restrict network access to affected ports
-# 3. Detection: deploy monitoring rule for exploitation indicators
+# Queries the CME MCP server with the CVE's CVSS vector and CWE IDs to
+# determine which defensive controls are relevant, audits the current
+# posture (PRE), then applies automated remediation through the
+# cme.controls collection roles.
 #
 # Triggered by: EDA workflow (after correlate_cve identifies affected hosts)
 
-- name: "CME Mitigate — Apply Compensating Controls"
+###############################################################################
+# PHASE 1: QUERY CME MCP — Which controls mitigate this CVE?
+###############################################################################
+- name: "CME Query — Determine Relevant Controls"
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
+  vars:
+    cve_id: "{{ demo_cve_id }}"
+    cvss_vector: "{{ demo_cvss_vector }}"
+    cwe_ids: "{{ demo_cwe_ids }}"
+
+  tasks:
+    - name: Query CME MCP for mitigating controls
+      cme.controls.cme_query:
+        cvss_vector: "{{ cvss_vector }}"
+        cwe_ids: "{{ cwe_ids }}"
+        mcp_endpoint: "{{ cme_mcp_endpoint }}"
+      register: cme_query_result
+
+    - name: Display query results
+      ansible.builtin.debug:
+        msg: >-
+          CME found {{ cme_query_result.cme_ids | length }} controls for {{ cve_id }}
+          ({{ cme_query_result.query_summary.matched_by_vector }} by CVSS vector,
+          {{ cme_query_result.query_summary.matched_by_cwe }} by CWE)
+
+    - name: Build dynamic profile
+      ansible.builtin.set_fact:
+        cme_dynamic_profile:
+          controls: "{{ cme_query_result.cme_ids | map('lower') | map('replace', '-', '_') | list }}"
+        cme_dynamic_cme_ids: "{{ cme_query_result.cme_ids }}"
+
+    - name: Ensure report directory exists
+      ansible.builtin.file:
+        path: "{{ report_output_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Save dynamic profile to disk
+      ansible.builtin.copy:
+        content: |
+          ---
+          # Dynamic CME profile for {{ cve_id }}
+          # CVSS: {{ cvss_vector }}
+          # CWE: {{ cwe_ids | join(', ') }}
+          # Generated: {{ ansible_date_time.iso8601 }}
+          controls:
+          {% for cid in cme_dynamic_profile.controls %}
+            - {{ cid }}
+          {% endfor %}
+        dest: "{{ report_output_dir }}/cve_profile_{{ cve_id | replace('-', '_') }}.yml"
+        mode: "0644"
+
+###############################################################################
+# PHASE 2: PRE-REMEDIATION VERIFY
+###############################################################################
+- name: "CME PRE-Verify — Audit Current Posture"
   hosts: targets
   become: true
   gather_facts: true
   vars_files:
     - ../vars/vault.yml
   vars:
-    cve_id: "{{ demo_cve_id }}"
-    affected_package: "{{ demo_cve_package }}"
-    mitigation_tag: "cme_{{ cve_id | replace('-', '_') }}"
+    cme_results: []
 
   tasks:
-    - name: "CME Control 1 — Tighten SELinux policy for affected service"
-      block:
-        - name: Ensure SELinux is enforcing
-          ansible.posix.selinux:
-            policy: targeted
-            state: enforcing
+    - name: Load dynamic profile from Phase 1
+      ansible.builtin.set_fact:
+        cme_target_controls: "{{ hostvars['localhost']['cme_dynamic_profile']['controls'] }}"
 
-        - name: Set SELinux boolean to restrict network access for Python services
-          ansible.posix.seboolean:
-            name: httpd_can_network_connect
-            state: false
-            persistent: true
-          when: "'httpd' in ansible_facts.packages | default({})"
+    - name: Verify each control (read-only)
+      ansible.builtin.include_role:
+        name: "{{ control_id }}"
+        tasks_from: verify.yml
+      loop: "{{ cme_target_controls }}"
+      loop_control:
+        loop_var: control_id
+      ignore_errors: true
 
-        - name: Apply confined SELinux context to vulnerable package paths
-          ansible.builtin.command:
-            cmd: >-
-              semanage fcontext -a -t confined_service_exec_t
-              "/usr/lib64/python.*/site-packages/cryptography/.*"
-          register: selinux_result
-          changed_when: selinux_result.rc == 0
-          failed_when: selinux_result.rc not in [0, 1]
+    - name: Save PRE results
+      ansible.builtin.set_fact:
+        cme_pre_results: "{{ cme_results }}"
+        cme_pre_passed: "{{ cme_results | selectattr('status', 'equalto', 'passed') | list }}"
+        cme_pre_failed: "{{ cme_results | selectattr('status', 'equalto', 'failed') | list }}"
 
-        - name: Restore SELinux contexts
-          ansible.builtin.command:
-            cmd: restorecon -Rv /usr/lib64/python3.9/site-packages/cryptography/
-          changed_when: true
+    - name: Display PRE posture
+      ansible.builtin.debug:
+        msg: >-
+          PRE — {{ inventory_hostname }}:
+          {{ cme_pre_passed | length }} passed,
+          {{ cme_pre_failed | length }} failed
+          out of {{ cme_results | length }} controls
 
-      rescue:
-        - name: SELinux mitigation failed — log and continue
-          ansible.builtin.debug:
-            msg: "WARNING: SELinux mitigation could not be applied: {{ ansible_failed_result.msg | default('unknown') }}"
+###############################################################################
+# PHASE 3: REMEDIATE
+###############################################################################
+- name: "CME Remediate — Apply Compensating Controls"
+  hosts: targets
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
 
-    - name: "CME Control 2 — Restrict network access to affected service"
-      block:
-        - name: Create firewalld rich rule to limit inbound connections
-          ansible.posix.firewalld:
-            rich_rule: >-
-              rule family="ipv4"
-              service name="https"
-              source NOT address="10.0.0.0/8"
-              drop
-            permanent: true
-            immediate: true
-            state: enabled
-          notify: reload_firewalld
+  tasks:
+    - name: Load dynamic profile
+      ansible.builtin.set_fact:
+        cme_target_controls: "{{ hostvars['localhost']['cme_dynamic_profile']['controls'] }}"
 
-        - name: Log firewall mitigation applied
-          ansible.builtin.debug:
-            msg: "Firewall mitigation applied: inbound HTTPS restricted to internal networks only"
+    - name: Apply each control
+      ansible.builtin.include_tasks:
+        file: _apply_cme_control.yml
+      loop: "{{ cme_target_controls }}"
+      loop_control:
+        loop_var: control_id
 
-    - name: "CME Control 3 — Deploy exploitation detection rule"
-      block:
-        - name: Create audit rule for suspicious cryptography library access patterns
-          ansible.builtin.lineinfile:
-            path: /etc/audit/rules.d/cme-{{ cve_id }}.rules
-            line: "-w /usr/lib64/python3.9/site-packages/cryptography/ -p x -k {{ mitigation_tag }}"
-            create: true
-            mode: "0640"
-          notify: restart_auditd
+###############################################################################
+# PERSIST PRE RESULTS FOR cme_verify.yml
+###############################################################################
+- name: "CME — Save PRE Results"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../vars/vault.yml
 
-        - name: Create rsyslog rule to forward exploitation indicators
-          ansible.builtin.copy:
-            content: |
-              # CME Detection — {{ cve_id }} exploitation indicators
-              :msg, contains, "{{ mitigation_tag }}" /var/log/cme-detections.log
-            dest: "/etc/rsyslog.d/50-cme-{{ cve_id }}.conf"
-            mode: "0644"
-          notify: restart_rsyslog
+  tasks:
+    - name: Collect PRE passed control IDs across all hosts
+      ansible.builtin.set_fact:
+        all_pre_active: >-
+          {{ groups['targets'] | map('extract', hostvars, 'cme_pre_passed')
+             | select('defined') | flatten
+             | map(attribute='cme_id') | unique | list }}
 
-    - name: Record mitigation state
+    - name: Save PRE state for cme_verify.yml
       ansible.builtin.copy:
-        content: |
-          {
-            "cve_id": "{{ cve_id }}",
-            "mitigation_applied": true,
-            "controls": ["selinux_confinement", "firewall_restriction", "detection_rule"],
-            "timestamp": "{{ ansible_date_time.iso8601 }}",
-            "tag": "{{ mitigation_tag }}"
-          }
-        dest: "/var/lib/cme/{{ cve_id }}-mitigation.json"
+        content: "{{ pre_state | to_nice_json }}"
+        dest: "{{ report_output_dir }}/cme_pre_state_{{ demo_cve_id }}.json"
         mode: "0644"
+      vars:
+        pre_state:
+          cve_id: "{{ demo_cve_id }}"
+          cvss_vector: "{{ demo_cvss_vector }}"
+          cwe_ids: "{{ demo_cwe_ids }}"
+          pre_active_controls: "{{ all_pre_active }}"
+          profile_controls: "{{ hostvars['localhost']['cme_dynamic_profile']['controls'] }}"
+          cme_ids: "{{ hostvars['localhost']['cme_dynamic_cme_ids'] }}"
+          timestamp: "{{ ansible_date_time.iso8601 | default(lookup('pipe', 'date -Iseconds')) }}"
 
-  handlers:
-    - name: reload_firewalld
-      ansible.builtin.systemd:
-        name: firewalld
-        state: reloaded
-
-    - name: restart_auditd
-      ansible.builtin.command:
-        cmd: service auditd restart
-      changed_when: true
-
-    - name: restart_rsyslog
-      ansible.builtin.systemd:
-        name: rsyslog
-        state: restarted
+    - name: Mitigation summary
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+            CME MITIGATION COMPLETE — {{ demo_cve_id }}
+          ═══════════════════════════════════════════════════════════
+           Controls queried:    {{ hostvars['localhost']['cme_dynamic_cme_ids'] | length }}
+           PRE active:          {{ all_pre_active | length }}
+           Remediation applied: {{ hostvars['localhost']['cme_dynamic_profile']['controls'] | length }} roles
+          ───────────────────────────────────────────────────────────
+           Next: Run cme_verify.yml to measure POST posture + CVSS attenuation
+          ═══════════════════════════════════════════════════════════
