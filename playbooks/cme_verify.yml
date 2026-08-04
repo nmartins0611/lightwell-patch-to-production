@@ -197,6 +197,15 @@
              Changes:   {{ post_score.simulation.modifications_applied | default(0) }} vector modifications
           ═══════════════════════════════════════════════════════════
 
+    - name: Ensure report web directory exists
+      ansible.builtin.file:
+        path: "{{ report_web_dir }}"
+        state: directory
+        owner: nginx
+        group: nginx
+        mode: "0755"
+      delegate_to: node2
+
     - name: Publish posture report to report server
       ansible.builtin.copy:
         src: "{{ report_output_dir }}/posture-report-{{ cve_id }}.json"
