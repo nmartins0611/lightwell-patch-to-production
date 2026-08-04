@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Security Reports — Lightwell Patch Demo</title>
+<style>
+  :root {
+    --rh-red: #ee0000;
+    --rh-red-dark: #a30000;
+    --rh-red-light: #ff442b;
+    --bg: #151515;
+    --surface: #1f1f1f;
+    --surface-raised: #292929;
+    --border: #3c3f42;
+    --text: #e0e0e0;
+    --text-secondary: #a3a3a3;
+    --pass: #3e8635;
+    --pass-light: #5ba352;
+    --fail: #c9190b;
+    --fail-light: #f56e6e;
+    --warn: #f0ab00;
+    --accent: #73bcf7;
+    --font: 'Red Hat Display', 'Red Hat Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+    line-height: 1.6;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+
+  header {
+    display: flex; align-items: center; gap: 1rem;
+    margin-bottom: 2.5rem; padding-bottom: 1.5rem;
+    border-bottom: 3px solid var(--rh-red);
+  }
+  .logo {
+    width: 48px; height: 48px; background: var(--rh-red);
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 0.7rem; color: white; flex-shrink: 0;
+    text-align: center; line-height: 1.1;
+  }
+  .header-text h1 { font-size: 1.6rem; font-weight: 700; color: #fff; }
+  .header-meta { color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.2rem; }
+
+  .status-bar {
+    display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap;
+  }
+  .status-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.75rem 1.25rem;
+    display: flex; align-items: center; gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .status-dot.green { background: var(--pass-light); }
+  .status-dot.red { background: var(--fail-light); }
+  .status-dot.yellow { background: var(--warn); }
+
+  .section-title {
+    font-size: 1.1rem; font-weight: 700; margin: 2rem 0 1rem;
+    padding-bottom: 0.5rem; border-bottom: 2px solid var(--border); color: #fff;
+  }
+
+  .report-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 1rem; margin-bottom: 1.5rem;
+  }
+  .report-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1.5rem;
+    transition: border-color 0.2s, transform 0.15s;
+    cursor: pointer; text-decoration: none; color: inherit;
+    display: block;
+  }
+  .report-card:hover {
+    border-color: var(--rh-red); transform: translateY(-2px);
+  }
+  .report-card .card-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 0.75rem;
+  }
+  .report-card h3 { font-size: 1rem; font-weight: 700; color: #fff; }
+  .report-card .card-type {
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 0.2rem 0.5rem; border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .card-type.exposure { background: rgba(201,25,11,0.15); color: var(--fail-light); }
+  .card-type.posture { background: rgba(62,134,53,0.15); color: var(--pass-light); }
+  .card-type.json { background: rgba(115,188,247,0.1); color: var(--accent); }
+  .card-type.state { background: rgba(240,171,0,0.12); color: var(--warn); }
+
+  .report-card .card-desc {
+    font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;
+  }
+  .report-card .card-footer {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.75rem; color: var(--text-secondary);
+  }
+  .report-card .card-format {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.7rem; padding: 0.15rem 0.4rem;
+    background: var(--surface-raised); border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+
+  .empty-state {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 3rem; text-align: center;
+    color: var(--text-secondary);
+  }
+  .empty-state h3 { color: var(--text); margin-bottom: 0.5rem; }
+
+  #loading { text-align: center; padding: 2rem; color: var(--text-secondary); }
+
+  footer {
+    margin-top: 3rem; padding-top: 1rem; border-top: 2px solid var(--rh-red);
+    color: var(--text-secondary); font-size: 0.8rem;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  footer .powered { color: var(--rh-red-light); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">AAP<br>CME</div>
+    <div class="header-text">
+      <h1>Security Reports</h1>
+      <div class="header-meta">Lightwell Patch Demo &mdash; CVE Lifecycle Automation</div>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <div class="status-item">
+      <span class="status-dot green"></span> Report Server Online
+    </div>
+    <div class="status-item" id="report-count">
+      <span class="status-dot yellow"></span> Loading...
+    </div>
+  </div>
+
+  <div id="reports-container">
+    <div id="loading">Scanning for reports...</div>
+  </div>
+
+  <footer>
+    <span>RHTPA + AAP + CME &nbsp;|&nbsp; Automated CVE Response</span>
+    <span class="powered">Ansible Automation Platform</span>
+  </footer>
+</div>
+
+<script>
+(function() {
+  var reportMeta = {
+    'exposure-report': {
+      title: 'CVE Exposure Report',
+      desc: 'RHTPA correlation — affected hosts, CVSS scoring, SBOM matches',
+      type: 'exposure',
+      typeLabel: 'Exposure'
+    },
+    'posture-report': {
+      title: 'CME Posture Report',
+      desc: 'Compensating controls — PRE/POST verification, CVSS attenuation',
+      type: 'posture',
+      typeLabel: 'Posture'
+    },
+    'cme_pre_state': {
+      title: 'CME Pre-Mitigation State',
+      desc: 'Control profile and baseline posture snapshot before remediation',
+      type: 'state',
+      typeLabel: 'State'
+    }
+  };
+
+  function classifyFile(name) {
+    for (var prefix in reportMeta) {
+      if (name.indexOf(prefix) === 0) {
+        return reportMeta[prefix];
+      }
+    }
+    return {
+      title: name,
+      desc: 'Report artifact',
+      type: 'json',
+      typeLabel: 'Data'
+    };
+  }
+
+  function getFormat(name) {
+    var ext = name.split('.').pop().toUpperCase();
+    return ext;
+  }
+
+  function extractCVE(name) {
+    var match = name.match(/CVE-\d{4}-\d+/i);
+    return match ? match[0] : '';
+  }
+
+  function renderReports(files) {
+    var container = document.getElementById('reports-container');
+    var countEl = document.getElementById('report-count');
+    var htmlFiles = files.filter(function(f) { return f.name.endsWith('.html'); });
+    var jsonFiles = files.filter(function(f) { return f.name.endsWith('.json'); });
+
+    countEl.innerHTML = '<span class="status-dot green"></span> ' +
+      files.length + ' report' + (files.length !== 1 ? 's' : '') + ' available';
+
+    if (files.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state">' +
+        '<h3>No Reports Yet</h3>' +
+        '<p>Run the demo playbooks to generate exposure and posture reports.</p>' +
+        '</div>';
+      return;
+    }
+
+    var html = '';
+
+    if (htmlFiles.length > 0) {
+      html += '<div class="section-title">Interactive Reports</div>';
+      html += '<div class="report-grid">';
+      htmlFiles.forEach(function(f) {
+        var meta = classifyFile(f.name);
+        var cve = extractCVE(f.name);
+        html += '<a class="report-card" href="' + f.name + '">' +
+          '<div class="card-header"><h3>' + meta.title + '</h3>' +
+          '<span class="card-type ' + meta.type + '">' + meta.typeLabel + '</span></div>' +
+          '<div class="card-desc">' + meta.desc + '</div>' +
+          '<div class="card-footer"><span>' + cve + '</span>' +
+          '<span class="card-format">' + getFormat(f.name) + '</span></div></a>';
+      });
+      html += '</div>';
+    }
+
+    if (jsonFiles.length > 0) {
+      html += '<div class="section-title">Raw Data (JSON)</div>';
+      html += '<div class="report-grid">';
+      jsonFiles.forEach(function(f) {
+        var meta = classifyFile(f.name);
+        var cve = extractCVE(f.name);
+        html += '<a class="report-card" href="' + f.name + '">' +
+          '<div class="card-header"><h3>' + meta.title + '</h3>' +
+          '<span class="card-type json">JSON</span></div>' +
+          '<div class="card-desc">' + meta.desc + '</div>' +
+          '<div class="card-footer"><span>' + cve + '</span>' +
+          '<span class="card-format">' + getFormat(f.name) + '</span></div></a>';
+      });
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+  }
+
+  fetch('/api/list/')
+    .then(function(r) { return r.json(); })
+    .then(function(files) {
+      var reports = files.filter(function(f) {
+        return f.type === 'file' && f.name !== 'index.html';
+      });
+      renderReports(reports);
+    })
+    .catch(function() {
+      document.getElementById('reports-container').innerHTML =
+        '<div class="empty-state"><h3>Could not load report list</h3>' +
+        '<p>Check that the report server is running.</p></div>';
+    });
+})();
+</script>
+</body>
+</html>

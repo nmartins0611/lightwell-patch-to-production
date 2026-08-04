@@ -19,14 +19,16 @@
     - ../vars/vault.yml
 
   tasks:
-    - name: Load PRE state from mitigation phase
-      ansible.builtin.slurp:
-        src: "{{ report_output_dir }}/cme_pre_state_{{ demo_cve_id }}.json"
+    - name: Fetch PRE state from report server
+      ansible.builtin.uri:
+        url: "{{ report_server_url }}/cme_pre_state_{{ demo_cve_id }}.json"
+        return_content: true
+        validate_certs: false
       register: pre_state_raw
 
     - name: Parse PRE state
       ansible.builtin.set_fact:
-        cme_pre_state: "{{ pre_state_raw.content | b64decode | from_json }}"
+        cme_pre_state: "{{ pre_state_raw.content | from_json }}"
 
     - name: Restore dynamic profile
       ansible.builtin.set_fact:

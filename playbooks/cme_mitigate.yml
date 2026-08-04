@@ -144,13 +144,9 @@
              | select('defined') | flatten
              | map(attribute='cme_id') | unique | list }}
 
-    - name: Save PRE state for cme_verify.yml
-      ansible.builtin.copy:
-        content: "{{ pre_state | to_nice_json }}"
-        dest: "{{ report_output_dir }}/cme_pre_state_{{ demo_cve_id }}.json"
-        mode: "0644"
-      vars:
-        pre_state:
+    - name: Build PRE state payload
+      ansible.builtin.set_fact:
+        cme_pre_state_payload:
           cve_id: "{{ demo_cve_id }}"
           cvss_vector: "{{ demo_cvss_vector }}"
           cwe_ids: "{{ demo_cwe_ids }}"
@@ -158,6 +154,12 @@
           profile_controls: "{{ hostvars['localhost']['cme_dynamic_profile']['controls'] }}"
           cme_ids: "{{ hostvars['localhost']['cme_dynamic_cme_ids'] }}"
           timestamp: "{{ ansible_date_time.iso8601 | default(lookup('pipe', 'date -Iseconds')) }}"
+
+    - name: Save PRE state locally
+      ansible.builtin.copy:
+        content: "{{ cme_pre_state_payload | to_nice_json }}"
+        dest: "{{ report_output_dir }}/cme_pre_state_{{ demo_cve_id }}.json"
+        mode: "0644"
 
     - name: Mitigation summary
       ansible.builtin.debug:
@@ -171,3 +173,27 @@
           ───────────────────────────────────────────────────────────
            Next: Run cme_verify.yml to measure POST posture + CVSS attenuation
           ═══════════════════════════════════════════════════════════
+
+- name: "Persist PRE State to Report Server"
+  hosts: builders
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../vars/vault.yml
+
+  tasks:
+    - name: Ensure report web directory exists
+      ansible.builtin.file:
+        path: "{{ report_web_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Publish PRE state for verify phase
+      ansible.builtin.copy:
+        content: "{{ hostvars['localhost']['cme_pre_state_payload'] | to_nice_json }}"
+        dest: "{{ report_web_dir }}/cme_pre_state_{{ demo_cve_id }}.json"
+        mode: "0644"
+
+    - name: PRE state persisted
+      ansible.builtin.debug:
+        msg: "PRE state saved to {{ report_web_dir }}/cme_pre_state_{{ demo_cve_id }}.json"
