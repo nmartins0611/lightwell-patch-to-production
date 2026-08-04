@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CME Posture Report — {{ report.cve_id }}</title>
+<style>
+  :root {
+    --rh-red: #ee0000;
+    --rh-red-dark: #a30000;
+    --rh-red-light: #ff442b;
+    --bg: #151515;
+    --surface: #1f1f1f;
+    --surface-raised: #292929;
+    --border: #3c3f42;
+    --text: #e0e0e0;
+    --text-secondary: #a3a3a3;
+    --pass: #3e8635;
+    --pass-light: #5ba352;
+    --pass-bg: rgba(62, 134, 53, 0.12);
+    --fail: #c9190b;
+    --fail-light: #f56e6e;
+    --fail-bg: rgba(201, 25, 11, 0.10);
+    --warn: #f0ab00;
+    --warn-bg: rgba(240, 171, 0, 0.10);
+    --info: #06c;
+    --info-bg: rgba(0, 102, 204, 0.10);
+    --accent: #73bcf7;
+    --font: 'Red Hat Display', 'Red Hat Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+    line-height: 1.6;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  header {
+    display: flex; align-items: center; gap: 1rem;
+    margin-bottom: 2rem; padding-bottom: 1.5rem;
+    border-bottom: 3px solid var(--rh-red);
+  }
+  .logo {
+    width: 40px; height: 40px; background: var(--rh-red);
+    border-radius: 4px; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 1.1rem; color: white; flex-shrink: 0;
+  }
+  .header-text h1 { font-size: 1.6rem; font-weight: 700; color: #fff; }
+  .header-meta { color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.2rem; }
+  .header-meta strong { color: var(--text); }
+
+  .score-hero {
+    display: flex; align-items: center; gap: 2rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 2rem; margin-bottom: 2rem;
+  }
+  .score-ring {
+    position: relative; width: 140px; height: 140px; flex-shrink: 0;
+  }
+  .score-ring svg { width: 140px; height: 140px; transform: rotate(-90deg); }
+  .score-ring .ring-bg { fill: none; stroke: var(--border); stroke-width: 10; }
+  .score-ring .ring-fill { fill: none; stroke-width: 10; stroke-linecap: round; }
+  .score-ring .score-label {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%); text-align: center;
+  }
+  .score-ring .score-number { font-size: 2.5rem; font-weight: 900; line-height: 1; }
+  .score-ring .score-unit {
+    font-size: 0.7rem; color: var(--text-secondary);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+
+  .score-details { flex: 1; }
+  .score-details h2 { font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 0.75rem; }
+
+  .comparison-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;
+  }
+  .comparison-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.5rem; position: relative;
+  }
+  .comparison-card.pre { border-top: 3px solid var(--warn); }
+  .comparison-card.post { border-top: 3px solid var(--pass); }
+  .comparison-card h3 {
+    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;
+    margin-bottom: 1rem;
+  }
+  .comparison-card.pre h3 { color: var(--warn); }
+  .comparison-card.post h3 { color: var(--pass-light); }
+
+  .metric-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.5rem 0; border-bottom: 1px solid var(--border);
+  }
+  .metric-row:last-child { border-bottom: none; }
+  .metric-label { font-size: 0.85rem; color: var(--text-secondary); }
+  .metric-value { font-size: 1.1rem; font-weight: 800; }
+  .metric-value.good { color: var(--pass-light); }
+  .metric-value.bad { color: var(--fail-light); }
+  .metric-value.neutral { color: var(--accent); }
+
+  .delta-badge {
+    display: inline-block; padding: 0.2rem 0.6rem; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 700;
+    background: var(--pass-bg); color: var(--pass-light); border: 1px solid var(--pass);
+    margin-left: 0.5rem;
+  }
+
+  .vector-display {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.78rem;
+    background: var(--surface-raised); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.5rem 0.75rem;
+    word-break: break-all; margin-top: 0.75rem;
+  }
+  .vector-display.original { color: var(--fail-light); }
+  .vector-display.modified { color: var(--pass-light); }
+
+  .section-title {
+    font-size: 1.15rem; font-weight: 700; margin: 2.5rem 0 1rem;
+    padding-bottom: 0.5rem; border-bottom: 2px solid var(--border); color: #fff;
+  }
+  .section-subtitle {
+    font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;
+  }
+
+  .attenuation-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem; display: flex; align-items: center; gap: 1rem;
+  }
+  .attenuation-card .metric-name {
+    font-size: 1.1rem; font-weight: 800; color: var(--rh-red-light); min-width: 2.5rem;
+  }
+  .attenuation-card .arrow { color: var(--text-secondary); font-size: 1.2rem; }
+  .attenuation-card .value { font-size: 1.1rem; font-weight: 700; color: var(--pass-light); }
+  .attenuation-card .controls {
+    color: var(--text-secondary); font-size: 0.8rem; margin-left: auto;
+  }
+
+  .summary-cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem; margin-bottom: 2rem;
+  }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem; text-align: center;
+  }
+  .stat .value { font-size: 2.25rem; font-weight: 800; }
+  .stat .label {
+    color: var(--text-secondary); font-size: 0.75rem; margin-top: 0.25rem;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .stat.pass .value { color: var(--pass-light); }
+  .stat.fail .value { color: var(--fail-light); }
+  .stat.accent .value { color: var(--accent); }
+  .stat.warn .value { color: var(--warn); }
+
+  .progress-bar {
+    width: 100%; height: 10px; background: var(--surface-raised);
+    border-radius: 5px; overflow: hidden; margin-bottom: 2rem;
+    border: 1px solid var(--border);
+  }
+  .progress-fill {
+    height: 100%; border-radius: 5px;
+    background: linear-gradient(90deg, var(--rh-red), var(--pass-light));
+  }
+
+  .recommendation {
+    background: var(--pass-bg); border: 1px solid var(--pass);
+    border-radius: 8px; padding: 1.25rem 1.5rem; margin: 2rem 0;
+    font-size: 0.95rem;
+  }
+  .recommendation strong { color: var(--pass-light); }
+
+  .cwe-tags { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .cwe-tag {
+    display: inline-block; padding: 0.2rem 0.6rem; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 600;
+    background: rgba(238,0,0,0.12); color: var(--rh-red-light);
+  }
+
+  footer {
+    margin-top: 3rem; padding-top: 1rem; border-top: 2px solid var(--rh-red);
+    color: var(--text-secondary); font-size: 0.8rem;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  footer .powered { color: var(--rh-red-light); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">CME</div>
+    <div class="header-text">
+      <h1>Security Posture Report</h1>
+      <div class="header-meta">
+        CVE: <strong>{{ report.cve_id }}</strong>
+        &nbsp;|&nbsp; Hosts: <strong>{{ report.hosts_assessed }}</strong>
+        &nbsp;|&nbsp; Controls: <strong>{{ report.controls_evaluated }}</strong>
+        &nbsp;|&nbsp; {{ report.timestamp }}
+      </div>
+    </div>
+  </header>
+
+{% set pre_active = report.pre_remediation.active_controls | int %}
+{% set post_active = report.post_remediation.active_controls | int %}
+{% set newly_remediated = report.post_remediation.newly_remediated | int %}
+{% set total = report.controls_evaluated | int %}
+{% set post_rate = (post_active / total * 100) if total > 0 else 0 %}
+{% set pre_rate = (pre_active / total * 100) if total > 0 else 0 %}
+{% set pre_attenuation = report.pre_remediation.attenuation | default([]) %}
+{% set post_attenuation = report.post_remediation.attenuation | default([]) %}
+{% set pre_sim = report.pre_remediation.simulation | default({}) %}
+{% set post_sim = report.post_remediation.simulation | default({}) %}
+{% set score_color = '--pass-light' if post_rate >= 50 else ('--warn' if post_rate >= 25 else '--fail-light') %}
+
+  <div class="score-hero">
+    <div class="score-ring">
+      <svg viewBox="0 0 140 140">
+        <circle class="ring-bg" cx="70" cy="70" r="58"></circle>
+        <circle class="ring-fill" cx="70" cy="70" r="58"
+          stroke="var({{ score_color }})"
+          stroke-dasharray="364.4"
+          stroke-dashoffset="{{ 364.4 - (364.4 * post_rate / 100) }}">
+        </circle>
+      </svg>
+      <div class="score-label">
+        <div class="score-number" style="color: var({{ score_color }})">{{ '%0.0f' | format(post_rate) }}</div>
+        <div class="score-unit">Post Score</div>
+      </div>
+    </div>
+    <div class="score-details">
+      <h2>Compensating Controls Posture</h2>
+      <div class="cwe-tags">
+{% for cwe in report.cwe_ids %}
+        <span class="cwe-tag">{{ cwe }}</span>
+{% endfor %}
+      </div>
+      <div class="vector-display original">Original: {{ report.cvss_vector }}</div>
+{% if post_sim.modified is defined and post_sim.modified.vector is defined %}
+      <div class="vector-display modified">Modified: {{ post_sim.modified.vector }}</div>
+{% endif %}
+    </div>
+  </div>
+
+  <div class="summary-cards">
+    <div class="stat accent">
+      <div class="value">{{ total }}</div>
+      <div class="label">Controls Evaluated</div>
+    </div>
+    <div class="stat warn">
+      <div class="value">{{ pre_active }}</div>
+      <div class="label">PRE Active</div>
+    </div>
+    <div class="stat pass">
+      <div class="value">{{ post_active }}</div>
+      <div class="label">POST Active</div>
+    </div>
+    <div class="stat pass">
+      <div class="value">+{{ newly_remediated }}</div>
+      <div class="label">Newly Remediated</div>
+    </div>
+  </div>
+
+  <div class="progress-bar">
+    <div class="progress-fill" style="width: {{ '%0.0f' | format(post_rate) }}%"></div>
+  </div>
+
+  <div class="comparison-grid">
+    <div class="comparison-card pre">
+      <h3>PRE-Remediation</h3>
+      <div class="metric-row">
+        <span class="metric-label">Active Controls</span>
+        <span class="metric-value neutral">{{ pre_active }}</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Metrics Attenuated</span>
+        <span class="metric-value neutral">{{ pre_attenuation | length }}</span>
+      </div>
+{% if pre_sim.original is defined %}
+      <div class="metric-row">
+        <span class="metric-label">Base Score</span>
+        <span class="metric-value bad">{{ pre_sim.original.score | default('10.0') }}</span>
+      </div>
+{% endif %}
+{% if pre_sim.modified is defined %}
+      <div class="metric-row">
+        <span class="metric-label">Modified Score</span>
+        <span class="metric-value neutral">{{ pre_sim.modified.score | default('N/A') }}</span>
+      </div>
+{% endif %}
+    </div>
+
+    <div class="comparison-card post">
+      <h3>POST-Remediation</h3>
+      <div class="metric-row">
+        <span class="metric-label">Active Controls</span>
+        <span class="metric-value good">{{ post_active }}<span class="delta-badge">+{{ newly_remediated }}</span></span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Metrics Attenuated</span>
+        <span class="metric-value good">{{ post_attenuation | length }}</span>
+      </div>
+{% if post_sim.original is defined %}
+      <div class="metric-row">
+        <span class="metric-label">Base Score</span>
+        <span class="metric-value bad">{{ post_sim.original.score | default('10.0') }}</span>
+      </div>
+{% endif %}
+{% if post_sim.modified is defined %}
+      <div class="metric-row">
+        <span class="metric-label">Modified Score</span>
+        <span class="metric-value good">{{ post_sim.modified.score | default('N/A') }}</span>
+      </div>
+{% endif %}
+    </div>
+  </div>
+
+{% if post_attenuation | length > 0 %}
+  <div class="section-title">CVSS Attenuation (POST)</div>
+  <div class="section-subtitle">Active controls shift these CVSS base metrics, reducing exploitability and impact.</div>
+{% for item in post_attenuation %}
+  <div class="attenuation-card">
+    <span class="metric-name">{{ item.metric }}</span>
+    <span class="arrow">&#8594;</span>
+    <span class="value">{{ item.modified_to }}</span>
+    <span class="controls">{{ item.contributing_controls | length }} control{{ 's' if item.contributing_controls | length > 1 else '' }}: {{ item.contributing_controls | join(', ') }}</span>
+  </div>
+{% endfor %}
+{% endif %}
+
+  <div class="recommendation">
+    <strong>Recommendation:</strong> {{ report.recommendation }}
+  </div>
+
+  <footer>
+    <span>CME Ansible Collection (cme.controls) &nbsp;|&nbsp; {{ report.hosts_assessed }} hosts assessed</span>
+    <span class="powered">Powered by Common Mitigation Enumeration</span>
+  </footer>
+</div>
+</body>
+</html>

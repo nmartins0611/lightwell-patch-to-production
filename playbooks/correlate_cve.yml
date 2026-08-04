@@ -94,6 +94,15 @@
           RHTPA returned {{ rhtpa_sbom_results.json.total }} SBOMs containing {{ affected_package }}.
           Mapped to inventory: {{ affected_hosts | join(', ') }}
 
+    - name: Build host detail records for report
+      ansible.builtin.set_fact:
+        affected_hosts_detail: >-
+          [{% for h in affected_hosts %}
+          {"hostname": "{{ h }}",
+           "fqdn": "{{ hostvars[h]['ansible_host'] | default(h) }}",
+           "environment_type": "{{ hostvars[h]['environment_type'] | default('unknown') }}"}{% if not loop.last %},{% endif %}
+          {% endfor %}]
+
     - name: Enrich with inventory context
       ansible.builtin.set_fact:
         exposure_report:
@@ -103,6 +112,7 @@
           cwe_ids: "{{ cwe_ids }}"
           affected_package: "{{ affected_package }}"
           affected_hosts: "{{ affected_hosts }}"
+          affected_hosts_detail: "{{ affected_hosts_detail }}"
           affected_count: "{{ affected_hosts | length }}"
           sbom_sources: "{{ sbom_source_names }}"
           rhtpa_advisory: "{{ rhtpa_vuln_results.json['items'][0].advisories[0].document_id | default('N/A') }}"
@@ -120,11 +130,19 @@
         state: directory
         mode: "0750"
 
-    - name: Write exposure report
+    - name: Write exposure report (JSON)
       ansible.builtin.copy:
         content: "{{ exposure_report | to_nice_json }}"
         dest: "{{ report_output_dir }}/exposure-report-{{ cve_id }}.json"
         mode: "0644"
+
+    - name: Write exposure report (HTML)
+      ansible.builtin.template:
+        src: ../templates/exposure_report.html.j2
+        dest: "{{ report_output_dir }}/exposure-report-{{ cve_id }}.html"
+        mode: "0644"
+      vars:
+        report: "{{ exposure_report }}"
 
     - name: Display exposure summary
       ansible.builtin.debug:
@@ -188,12 +206,23 @@
         state: directory
         mode: "0755"
 
-    - name: Publish exposure report
+    - name: Publish exposure report (JSON)
       ansible.builtin.copy:
         content: "{{ hostvars['localhost']['exposure_report'] | to_nice_json }}"
         dest: "{{ report_web_dir }}/exposure-report-{{ cve_id }}.json"
         mode: "0644"
 
-    - name: Report published
+    - name: Publish exposure report (HTML)
+      ansible.builtin.template:
+        src: ../templates/exposure_report.html.j2
+        dest: "{{ report_web_dir }}/exposure-report-{{ cve_id }}.html"
+        mode: "0644"
+      vars:
+        report: "{{ hostvars['localhost']['exposure_report'] }}"
+
+    - name: Reports published
       ansible.builtin.debug:
-        msg: "Report available at {{ report_server_url }}/exposure-report-{{ cve_id }}.json"
+        msg: >-
+          Reports available at
+          {{ report_server_url }}/exposure-report-{{ cve_id }}.html (HTML)
+          {{ report_server_url }}/exposure-report-{{ cve_id }}.json (JSON)

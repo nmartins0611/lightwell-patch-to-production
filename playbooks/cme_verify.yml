@@ -160,11 +160,19 @@
         state: directory
         mode: "0755"
 
-    - name: Write posture report
+    - name: Write posture report (JSON)
       ansible.builtin.copy:
         content: "{{ posture_report | to_nice_json }}"
         dest: "{{ report_output_dir }}/posture-report-{{ cve_id }}.json"
         mode: "0644"
+
+    - name: Write posture report (HTML)
+      ansible.builtin.template:
+        src: ../templates/posture_report.html.j2
+        dest: "{{ report_output_dir }}/posture-report-{{ cve_id }}.html"
+        mode: "0644"
+      vars:
+        report: "{{ posture_report }}"
 
     - name: Display CVE response summary
       ansible.builtin.debug:
@@ -213,12 +221,23 @@
         state: directory
         mode: "0755"
 
-    - name: Publish posture report
+    - name: Publish posture report (JSON)
       ansible.builtin.copy:
         content: "{{ hostvars['localhost']['posture_report'] | to_nice_json }}"
         dest: "{{ report_web_dir }}/posture-report-{{ cve_id }}.json"
         mode: "0644"
 
-    - name: Report published
+    - name: Publish posture report (HTML)
+      ansible.builtin.template:
+        src: ../templates/posture_report.html.j2
+        dest: "{{ report_web_dir }}/posture-report-{{ cve_id }}.html"
+        mode: "0644"
+      vars:
+        report: "{{ hostvars['localhost']['posture_report'] }}"
+
+    - name: Reports published
       ansible.builtin.debug:
-        msg: "Report available at {{ report_server_url }}/posture-report-{{ cve_id }}.json"
+        msg: >-
+          Reports available at
+          {{ report_server_url }}/posture-report-{{ cve_id }}.html (HTML)
+          {{ report_server_url }}/posture-report-{{ cve_id }}.json (JSON)
