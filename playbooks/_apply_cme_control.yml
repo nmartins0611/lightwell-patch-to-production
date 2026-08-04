@@ -3,7 +3,7 @@
   block:
     - name: "Include role {{ control_id }}"
       ansible.builtin.include_role:
-        name: "{{ control_id }}"
+        name: "cme.controls.{{ control_id }}"
   rescue:
     - name: "Log failure for {{ control_id }}"
       ansible.builtin.debug:

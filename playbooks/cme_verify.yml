@@ -61,7 +61,7 @@
 
     - name: Verify each control (read-only)
       ansible.builtin.include_role:
-        name: "{{ control_id }}"
+        name: "cme.controls.{{ control_id }}"
         tasks_from: verify.yml
       loop: "{{ cme_target_controls }}"
       loop_control:
