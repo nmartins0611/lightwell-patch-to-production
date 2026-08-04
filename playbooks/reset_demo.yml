@@ -159,7 +159,7 @@
 
   tasks:
     - name: Clear published reports from report server
-      ansible.builtin.shell: rm -f {{ report_web_dir }}/*.json 2>/dev/null
+      ansible.builtin.shell: rm -f {{ report_web_dir }}/*.json {{ report_web_dir }}/*.html 2>/dev/null
       changed_when: true
       failed_when: false
 
