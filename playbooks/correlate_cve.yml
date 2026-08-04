@@ -50,7 +50,7 @@
         that:
           - rhtpa_vuln_results.json.total | int > 0
         fail_msg: "CVE {{ cve_id }} not found in RHTPA — upload the advisory first"
-        success_msg: "CVE {{ cve_id }} found in RHTPA ({{ rhtpa_vuln_results.json.items[0].advisories | length }} advisory)"
+        success_msg: "CVE {{ cve_id }} found in RHTPA ({{ rhtpa_vuln_results.json['items'][0].advisories | length }} advisory)"
 
     - name: Query RHTPA for SBOMs containing the vulnerable package
       ansible.builtin.uri:
@@ -65,7 +65,7 @@
 
     - name: Extract SBOM source names from RHTPA results
       ansible.builtin.set_fact:
-        sbom_source_names: "{{ rhtpa_sbom_results.json.items | map(attribute='name') | list }}"
+        sbom_source_names: "{{ rhtpa_sbom_results.json['items'] | map(attribute='name') | list }}"
 
     - name: Build reverse lookup of ansible_host to inventory_hostname
       ansible.builtin.set_fact:
@@ -105,7 +105,7 @@
           affected_hosts: "{{ affected_hosts }}"
           affected_count: "{{ affected_hosts | length }}"
           sbom_sources: "{{ sbom_source_names }}"
-          rhtpa_advisory: "{{ rhtpa_vuln_results.json.items[0].advisories[0].document_id | default('N/A') }}"
+          rhtpa_advisory: "{{ rhtpa_vuln_results.json['items'][0].advisories[0].document_id | default('N/A') }}"
           environment_exposure:
             production_hosts: "{{ affected_hosts | select('in', groups.get('production', [])) | list }}"
             internet_facing: true
