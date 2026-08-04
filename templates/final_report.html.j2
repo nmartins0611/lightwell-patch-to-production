@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CVE Lifecycle Report — {{ report.cve_id }}</title>
+<style>
+  :root {
+    --rh-red: #ee0000;
+    --rh-red-dark: #a30000;
+    --rh-red-light: #ff442b;
+    --bg: #151515;
+    --surface: #1f1f1f;
+    --surface-raised: #292929;
+    --border: #3c3f42;
+    --text: #e0e0e0;
+    --text-secondary: #a3a3a3;
+    --pass: #3e8635;
+    --pass-light: #5ba352;
+    --pass-bg: rgba(62, 134, 53, 0.12);
+    --fail: #c9190b;
+    --fail-light: #f56e6e;
+    --warn: #f0ab00;
+    --warn-bg: rgba(240, 171, 0, 0.10);
+    --accent: #73bcf7;
+    --font: 'Red Hat Display', 'Red Hat Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+    line-height: 1.6;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+
+  header {
+    display: flex; align-items: center; gap: 1rem;
+    margin-bottom: 2rem; padding-bottom: 1.5rem;
+    border-bottom: 3px solid var(--rh-red);
+  }
+  .logo {
+    width: 48px; height: 48px; background: var(--pass);
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 1.4rem; color: white; flex-shrink: 0;
+  }
+  .header-text h1 { font-size: 1.6rem; font-weight: 700; color: #fff; }
+  .header-meta { color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.2rem; }
+  .header-meta strong { color: var(--text); }
+
+  .resolved-badge {
+    display: inline-block; padding: 0.35rem 1.2rem; border-radius: 4px;
+    font-size: 0.85rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; margin-left: auto;
+    background: var(--pass-bg); color: var(--pass-light); border: 1px solid var(--pass);
+  }
+
+  .summary-cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem; margin-bottom: 2rem;
+  }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem; text-align: center;
+  }
+  .stat .value { font-size: 2rem; font-weight: 800; }
+  .stat .label {
+    color: var(--text-secondary); font-size: 0.7rem; margin-top: 0.25rem;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .stat.pass .value { color: var(--pass-light); }
+  .stat.accent .value { color: var(--accent); }
+
+  .section-title {
+    font-size: 1.1rem; font-weight: 700; margin: 2rem 0 1rem;
+    padding-bottom: 0.5rem; border-bottom: 2px solid var(--border); color: #fff;
+  }
+
+  .timeline {
+    position: relative; padding-left: 2rem; margin-bottom: 2rem;
+  }
+  .timeline::before {
+    content: ''; position: absolute; left: 0.55rem; top: 0.5rem; bottom: 0.5rem;
+    width: 2px; background: var(--border);
+  }
+  .timeline-item {
+    position: relative; margin-bottom: 1.25rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem 1.25rem;
+  }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -1.65rem; top: 1.2rem;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--pass-light); border: 2px solid var(--bg);
+  }
+  .timeline-item .phase-tag {
+    display: inline-block; padding: 0.1rem 0.5rem; border-radius: 3px;
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 0.4rem;
+    background: rgba(115,188,247,0.1); color: var(--accent);
+  }
+  .timeline-item .event-name {
+    font-weight: 700; color: #fff; font-size: 0.95rem; margin-bottom: 0.2rem;
+  }
+  .timeline-item .event-action {
+    font-size: 0.85rem; color: var(--text-secondary);
+  }
+
+  .products-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem; margin-bottom: 2rem;
+  }
+  .product-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem;
+  }
+  .product-card h4 { font-size: 0.9rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem; }
+  .product-card p { font-size: 0.8rem; color: var(--text-secondary); }
+
+  .governance-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem; margin-bottom: 2rem;
+  }
+  .gov-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.75rem 1rem;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .gov-item .gov-label { font-size: 0.8rem; color: var(--text-secondary); }
+  .gov-item .gov-value { font-size: 0.95rem; font-weight: 700; color: var(--pass-light); }
+
+  footer {
+    margin-top: 3rem; padding-top: 1rem; border-top: 2px solid var(--rh-red);
+    color: var(--text-secondary); font-size: 0.8rem;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  footer .powered { color: var(--rh-red-light); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">&#10003;</div>
+    <div class="header-text">
+      <h1>{{ report.title }}</h1>
+      <div class="header-meta">
+        Advisory: <strong>{{ report.advisory_id }}</strong>
+        &nbsp;|&nbsp; {{ report.timestamp }}
+      </div>
+    </div>
+    <span class="resolved-badge">{{ report.status }}</span>
+  </header>
+
+  <div class="summary-cards">
+    <div class="stat pass">
+      <div class="value">{{ report.status }}</div>
+      <div class="label">Status</div>
+    </div>
+    <div class="stat accent">
+      <div class="value">{{ report.timeline | length }}</div>
+      <div class="label">Lifecycle Events</div>
+    </div>
+    <div class="stat accent">
+      <div class="value">{{ report.products_demonstrated | length }}</div>
+      <div class="label">Products Used</div>
+    </div>
+    <div class="stat pass">
+      <div class="value">{{ report.governance.eda_events_processed }}</div>
+      <div class="label">EDA Events</div>
+    </div>
+  </div>
+
+  <div class="section-title">CVE Lifecycle Timeline</div>
+  <div class="timeline">
+{% for event in report.timeline %}
+    <div class="timeline-item">
+      <span class="phase-tag">{{ event.phase }}</span>
+      <div class="event-name">{{ event.event }}</div>
+      <div class="event-action">{{ event.action }}</div>
+    </div>
+{% endfor %}
+  </div>
+
+  <div class="section-title">Products Demonstrated</div>
+  <div class="products-grid">
+{% for product in report.products_demonstrated %}
+    <div class="product-card">
+      <h4>{{ product.name }}</h4>
+      <p>{{ product.role }}</p>
+    </div>
+{% endfor %}
+  </div>
+
+  <div class="section-title">Governance &amp; Compliance</div>
+  <div class="governance-grid">
+    <div class="gov-item">
+      <span class="gov-label">EDA Events</span>
+      <span class="gov-value">{{ report.governance.eda_events_processed }}</span>
+    </div>
+    <div class="gov-item">
+      <span class="gov-label">Policy Checks</span>
+      <span class="gov-value">{{ report.governance.opa_policy_checks }}</span>
+    </div>
+    <div class="gov-item">
+      <span class="gov-label">Approvals</span>
+      <span class="gov-value">{{ report.governance.approval_gates }}</span>
+    </div>
+    <div class="gov-item">
+      <span class="gov-label">RBAC</span>
+      <span class="gov-value">{{ 'Enforced' if report.governance.rbac_enforced else 'Disabled' }}</span>
+    </div>
+    <div class="gov-item">
+      <span class="gov-label">Audit Trail</span>
+      <span class="gov-value">{{ 'Complete' if report.audit_trail_complete else 'Partial' }}</span>
+    </div>
+  </div>
+
+  <footer>
+    <span>RHTPA + Lightwell + AAP + CME &nbsp;|&nbsp; {{ report.cve_id }}</span>
+    <span class="powered">Ansible Automation Platform</span>
+  </footer>
+</div>
+</body>
+</html>
