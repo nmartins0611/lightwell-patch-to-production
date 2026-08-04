@@ -59,6 +59,12 @@ cme_mcp_endpoint: "http://{{ hostvars['node2']['ansible_host'] }}:8000"
 # General
 # =============================================================================
 eda_webhook_port: 5000
+splunk_eda_webhook_port: 5001
+
+# Splunk (external SIEM integration)
+splunk_host: "192.168.88.168"
+splunk_hec_port: 8088
+splunk_hec_token: "fdd3db64-dba0-43f6-8f7e-b9225996faba"
 
 sbom_output_dir: "/tmp/sbom-artifacts"
 report_output_dir: "/tmp/demo-reports"

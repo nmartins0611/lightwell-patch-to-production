@@ -1,0 +1,44 @@
+---
+# EDA Rulebook: Splunk CVE Alert Webhook
+#
+# Receives webhook POSTs from a Splunk saved-search alert action.
+# Splunk sends the search result fields inside event.payload.result.
+# Maps the Splunk payload to the SBOM correlate + mitigate workflow.
+#
+# Splunk alert config:
+#   Saved search: "CVE Disclosure — Critical Vulnerability Detected"
+#   Alert action: Webhook → http://<eda_host>:5001/endpoint
+#
+# The webhook port is separate from the general EDA webhook (5000)
+# so Splunk traffic can be identified and filtered independently.
+
+- name: Splunk CVE Alert — Automated Response
+  hosts: all
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: "{{ splunk_eda_webhook_port | default(5001) }}"
+
+  rules:
+    - name: Splunk alert — CVE disclosure detected
+      condition: >-
+        event.payload.result is defined
+        and event.payload.result.cve_id is defined
+        and event.payload.result.event_type == "cve_disclosure"
+      throttle:
+        group_by: event.payload.result.cve_id
+        once_within: 5 minutes
+      action:
+        run_workflow_template:
+          name: "Demo — SBOM Correlate and Mitigate"
+          organization: "Default"
+          job_args:
+            extra_vars:
+              cve_id: "{{ event.payload.result.cve_id }}"
+              cvss_vector: "{{ event.payload.result.cvss_vector }}"
+              cwe_ids: "{{ event.payload.result.cwe_ids | from_json }}"
+              affected_package: "{{ event.payload.result.affected_package }}"
+              affected_version_range: "{{ event.payload.result.affected_version_range }}"
+              splunk_sid: "{{ event.payload.sid | default('N/A') }}"
+              splunk_search_name: "{{ event.payload.search_name | default('N/A') }}"
+              event_source: "splunk"
