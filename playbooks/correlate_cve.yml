@@ -138,6 +138,15 @@
           Recommended action: {{ exposure_report.recommended_action }}
           ===========================
 
+    - name: Ensure report web directory exists
+      ansible.builtin.file:
+        path: "{{ report_web_dir }}"
+        state: directory
+        owner: nginx
+        group: nginx
+        mode: "0755"
+      delegate_to: node2
+
     - name: Publish exposure report to report server
       ansible.builtin.copy:
         src: "{{ report_output_dir }}/exposure-report-{{ cve_id }}.json"
