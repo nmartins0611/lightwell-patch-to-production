@@ -146,6 +146,7 @@
         group: nginx
         mode: "0755"
       delegate_to: node2
+      become: true
 
     - name: Publish exposure report to report server
       ansible.builtin.copy:
@@ -155,6 +156,7 @@
         group: nginx
         mode: "0644"
       delegate_to: node2
+      become: true
 
     - name: Report published
       ansible.builtin.debug:
