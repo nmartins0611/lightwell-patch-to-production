@@ -54,10 +54,10 @@
           Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200, 204, 404]
         validate_certs: false
-      loop: "{{ sbom_list.json.items | default([]) }}"
+      loop: "{{ sbom_list.json['items'] | default([]) }}"
       loop_control:
         label: "{{ item.name | default(item.id) }}"
-      when: sbom_list.json.total | int > 0
+      when: sbom_list.json['total'] | int > 0
 
     - name: List all advisories in RHTPA
       ansible.builtin.uri:
@@ -72,22 +72,22 @@
 
     - name: Delete each advisory
       ansible.builtin.uri:
-        url: "{{ rhtpa_api_endpoint }}/api/v2/advisory/{{ item.id }}"
+        url: "{{ rhtpa_api_endpoint }}/api/v2/advisory/{{ item.uuid }}"
         method: DELETE
         headers:
           Authorization: "Bearer {{ token_response.json.access_token }}"
         status_code: [200, 204, 404]
         validate_certs: false
-      loop: "{{ advisory_list.json.items | default([]) }}"
+      loop: "{{ advisory_list.json['items'] | default([]) }}"
       loop_control:
         label: "{{ item.document_id | default(item.id) }}"
-      when: advisory_list.json.total | int > 0
+      when: advisory_list.json['total'] | int > 0
 
     - name: RHTPA cleared
       ansible.builtin.debug:
         msg: >-
-          Deleted {{ sbom_list.json.total | default(0) }} SBOMs
-          and {{ advisory_list.json.total | default(0) }} advisories from RHTPA
+          Deleted {{ sbom_list.json['total'] | default(0) }} SBOMs
+          and {{ advisory_list.json['total'] | default(0) }} advisories from RHTPA
 
 ###############################################################################
 # PHASE 2: REMOVE DYNAMIC CONTROLLER INVENTORIES
