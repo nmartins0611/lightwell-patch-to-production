@@ -138,24 +138,6 @@
           Recommended action: {{ exposure_report.recommended_action }}
           ===========================
 
-    - name: Ensure report web directory exists
-      ansible.builtin.file:
-        path: "{{ report_web_dir }}"
-        state: directory
-        mode: "0755"
-      delegate_to: node2
-
-    - name: Publish exposure report to report server
-      ansible.builtin.copy:
-        src: "{{ report_output_dir }}/exposure-report-{{ cve_id }}.json"
-        dest: "{{ report_web_dir }}/exposure-report-{{ cve_id }}.json"
-        mode: "0644"
-      delegate_to: node2
-
-    - name: Report published
-      ansible.builtin.debug:
-        msg: "Report available at {{ report_server_url }}/exposure-report-{{ cve_id }}.json"
-
     - name: Create dynamic inventory for affected hosts on Controller
       ansible.controller.inventory:
         name: "affected_hosts-{{ cve_id }}"
@@ -189,3 +171,29 @@
         msg: >-
           Created inventory 'affected_hosts-{{ cve_id }}' on Controller
           with {{ affected_hosts | length }} hosts: {{ affected_hosts | join(', ') }}
+
+- name: "Publish Exposure Report to Report Server"
+  hosts: builders
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../vars/vault.yml
+  vars:
+    cve_id: "{{ demo_cve_id }}"
+
+  tasks:
+    - name: Ensure report web directory exists
+      ansible.builtin.file:
+        path: "{{ report_web_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Publish exposure report
+      ansible.builtin.copy:
+        content: "{{ hostvars['localhost']['exposure_report'] | to_nice_json }}"
+        dest: "{{ report_web_dir }}/exposure-report-{{ cve_id }}.json"
+        mode: "0644"
+
+    - name: Report published
+      ansible.builtin.debug:
+        msg: "Report available at {{ report_server_url }}/exposure-report-{{ cve_id }}.json"
