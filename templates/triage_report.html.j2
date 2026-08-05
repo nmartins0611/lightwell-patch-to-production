@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI CVE Triage — {{ report.cve_id }}</title>
+<style>
+  :root {
+    --rh-red: #ee0000;
+    --rh-red-dark: #a30000;
+    --rh-red-light: #ff442b;
+    --bg: #151515;
+    --surface: #1f1f1f;
+    --surface-raised: #292929;
+    --border: #3c3f42;
+    --text: #e0e0e0;
+    --text-secondary: #a3a3a3;
+    --pass: #3e8635;
+    --pass-light: #5ba352;
+    --pass-bg: rgba(62, 134, 53, 0.12);
+    --fail: #c9190b;
+    --fail-light: #f56e6e;
+    --fail-bg: rgba(201, 25, 11, 0.10);
+    --warn: #f0ab00;
+    --warn-bg: rgba(240, 171, 0, 0.10);
+    --accent: #73bcf7;
+    --ai: #a78bfa;
+    --ai-bg: rgba(167, 139, 250, 0.10);
+    --font: 'Red Hat Display', 'Red Hat Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); padding: 2rem; line-height: 1.6; }
+  .container { max-width: 1000px; margin: 0 auto; }
+
+  header {
+    display: flex; align-items: center; gap: 1rem;
+    margin-bottom: 2rem; padding-bottom: 1.5rem;
+    border-bottom: 3px solid var(--ai);
+  }
+  .logo {
+    width: 48px; height: 48px; background: linear-gradient(135deg, var(--ai), var(--rh-red));
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 0.75rem; color: white; flex-shrink: 0; text-align: center; line-height: 1.1;
+  }
+  .header-text h1 { font-size: 1.6rem; font-weight: 700; color: #fff; }
+  .header-meta { color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.2rem; }
+  .header-meta strong { color: var(--text); }
+  .ai-badge {
+    display: inline-block; padding: 0.3rem 1rem; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    margin-left: auto; background: var(--ai-bg); color: var(--ai); border: 1px solid var(--ai);
+  }
+
+  .severity-hero {
+    display: flex; align-items: center; gap: 2rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 2rem; margin-bottom: 2rem;
+  }
+  .score-ring { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
+  .score-ring svg { width: 120px; height: 120px; transform: rotate(-90deg); }
+  .score-ring .ring-bg { fill: none; stroke: var(--border); stroke-width: 10; }
+  .score-ring .ring-fill { fill: none; stroke-width: 10; stroke-linecap: round; }
+  .score-ring .score-label {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%); text-align: center;
+  }
+  .score-ring .score-number { font-size: 2.2rem; font-weight: 900; line-height: 1; color: var(--fail-light); }
+  .score-ring .score-unit { font-size: 0.65rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .severity-details { flex: 1; }
+  .severity-details h2 { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; }
+  .severity-details .description { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
+  .vector-display {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.75rem;
+    background: var(--surface-raised); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.5rem 0.75rem; color: var(--rh-red-light);
+    word-break: break-all; margin-bottom: 0.5rem;
+  }
+  .cwe-tags { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .cwe-tag {
+    display: inline-block; padding: 0.15rem 0.5rem; border-radius: 3px;
+    font-size: 0.7rem; font-weight: 600;
+    background: rgba(238,0,0,0.12); color: var(--rh-red-light);
+  }
+
+  .risk-cards {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;
+  }
+  .risk-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem; text-align: center;
+  }
+  .risk-card .risk-value { font-size: 1.3rem; font-weight: 800; margin-bottom: 0.25rem; }
+  .risk-card .risk-label { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+  .risk-card.critical .risk-value { color: var(--fail-light); }
+  .risk-card.high .risk-value { color: var(--warn); }
+  .risk-card.immediate .risk-value { color: var(--rh-red-light); }
+
+  .section-title {
+    font-size: 1.1rem; font-weight: 700; margin: 2rem 0 0.75rem;
+    padding-bottom: 0.5rem; border-bottom: 2px solid var(--border); color: #fff;
+  }
+  .section-title .ai-icon { color: var(--ai); font-size: 0.85rem; margin-right: 0.3rem; }
+
+  .ai-summary {
+    background: var(--ai-bg); border: 1px solid var(--ai); border-left: 4px solid var(--ai);
+    border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 2rem; font-size: 0.9rem;
+  }
+
+  .attack-surface {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 2rem;
+    font-size: 0.9rem; color: var(--text-secondary);
+  }
+
+  .actions-list { margin-bottom: 2rem; }
+  .action-item {
+    display: flex; align-items: flex-start; gap: 1rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 0.5rem;
+  }
+  .action-priority {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 800; color: white;
+  }
+  .action-priority.p1 { background: var(--fail); }
+  .action-priority.p2 { background: var(--rh-red); }
+  .action-priority.p3 { background: var(--warn); }
+  .action-priority.p4 { background: #06c; }
+  .action-priority.p5 { background: var(--pass); }
+  .action-content { flex: 1; }
+  .action-content .action-text { font-size: 0.9rem; font-weight: 600; color: #fff; }
+  .action-content .action-tool { font-size: 0.75rem; color: var(--accent); margin-top: 0.15rem; }
+
+  .controls-grid {
+    display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-bottom: 2rem;
+  }
+  .control-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem 1.25rem;
+  }
+  .control-card h4 { font-size: 0.9rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem; }
+  .control-card .effectiveness { font-size: 0.82rem; color: var(--pass-light); margin-bottom: 0.2rem; }
+  .control-card .cme-ref { font-size: 0.75rem; color: var(--accent); }
+
+  .patch-strategy {
+    background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--warn);
+    border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 2rem;
+  }
+  .patch-strategy h4 { font-size: 0.9rem; font-weight: 700; color: var(--warn); margin-bottom: 0.5rem; }
+  .patch-strategy p { font-size: 0.85rem; color: var(--text-secondary); }
+
+  .info-row {
+    display: flex; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap;
+  }
+  .info-chip {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.4rem 0.75rem; font-size: 0.8rem;
+  }
+  .info-chip strong { color: #fff; }
+
+  footer {
+    margin-top: 3rem; padding-top: 1rem; border-top: 2px solid var(--ai);
+    color: var(--text-secondary); font-size: 0.8rem;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  footer .powered { color: var(--ai); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">AI<br>CVE</div>
+    <div class="header-text">
+      <h1>AI CVE Triage Report</h1>
+      <div class="header-meta">
+        CVE: <strong>{{ report.cve_id }}</strong>
+        &nbsp;|&nbsp; Package: <strong>{{ report.intelligence.affected_package }}</strong>
+        &nbsp;|&nbsp; {{ report.timestamp }}
+      </div>
+    </div>
+    <span class="ai-badge">{{ report.ai_analysis.model }}</span>
+  </header>
+
+  <div class="severity-hero">
+    <div class="score-ring">
+      <svg viewBox="0 0 120 120">
+        <circle class="ring-bg" cx="60" cy="60" r="50"></circle>
+        <circle class="ring-fill" cx="60" cy="60" r="50"
+          stroke="var(--fail-light)"
+          stroke-dasharray="314.2"
+          stroke-dashoffset="{{ 314.2 - (314.2 * (report.intelligence.cvss_score | float) / 10) }}">
+        </circle>
+      </svg>
+      <div class="score-label">
+        <div class="score-number">{{ report.intelligence.cvss_score }}</div>
+        <div class="score-unit">CVSS</div>
+      </div>
+    </div>
+    <div class="severity-details">
+      <h2>{{ report.intelligence.cvss_severity }} — {{ report.intelligence.affected_package }}</h2>
+      <div class="description">{{ report.intelligence.description }}</div>
+      <div class="vector-display">{{ report.intelligence.cvss_vector }}</div>
+      <div class="cwe-tags">
+{% for cwe in report.intelligence.cwe_ids %}
+        <span class="cwe-tag">{{ cwe }}</span>
+{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="risk-cards">
+    <div class="risk-card critical">
+      <div class="risk-value">{{ report.ai_analysis.risk_assessment.exploitation_likelihood }}</div>
+      <div class="risk-label">Exploitation Likelihood</div>
+    </div>
+    <div class="risk-card high">
+      <div class="risk-value">{{ report.ai_analysis.risk_assessment.business_impact }}</div>
+      <div class="risk-label">Business Impact</div>
+    </div>
+    <div class="risk-card immediate">
+      <div class="risk-value">{{ report.ai_analysis.risk_assessment.urgency }}</div>
+      <div class="risk-label">Response Urgency</div>
+    </div>
+  </div>
+
+  <div class="info-row">
+    <div class="info-chip">Patch: <strong>{{ 'Available' if report.patch_status.available | bool else 'Not Available' }}</strong></div>
+    <div class="info-chip">Advisory: <strong>{{ report.patch_status.advisory_id }}</strong></div>
+    <div class="info-chip">Fleet: <strong>{{ report.fleet_size }} hosts</strong></div>
+    <div class="info-chip">Internet-facing: <strong>{{ 'Yes' if report.internet_facing else 'No' }}</strong></div>
+    <div class="info-chip">Intel Source: <strong>{{ report.intelligence.source }}</strong></div>
+  </div>
+
+  <div class="section-title"><span class="ai-icon">&#9679;</span> AI Risk Assessment</div>
+  <div class="ai-summary">{{ report.ai_analysis.risk_assessment.summary }}</div>
+
+  <div class="section-title"><span class="ai-icon">&#9679;</span> Attack Surface Analysis</div>
+  <div class="attack-surface">{{ report.ai_analysis.attack_surface }}</div>
+
+  <div class="section-title"><span class="ai-icon">&#9679;</span> Immediate Actions</div>
+  <div class="actions-list">
+{% for action in report.ai_analysis.immediate_actions %}
+    <div class="action-item">
+      <div class="action-priority p{{ action.priority }}">{{ action.priority }}</div>
+      <div class="action-content">
+        <div class="action-text">{{ action.action }}</div>
+        <div class="action-tool">{{ action.tool }}</div>
+      </div>
+    </div>
+{% endfor %}
+  </div>
+
+  <div class="section-title"><span class="ai-icon">&#9679;</span> Compensating Controls</div>
+  <div class="controls-grid">
+{% for ctrl in report.ai_analysis.compensating_controls %}
+    <div class="control-card">
+      <h4>{{ ctrl.control }}</h4>
+      <div class="effectiveness">{{ ctrl.effectiveness }}</div>
+      <div class="cme-ref">{{ ctrl.cme_mapping }}</div>
+    </div>
+{% endfor %}
+  </div>
+
+  <div class="section-title">Patch Strategy</div>
+  <div class="patch-strategy">
+    <h4>{{ 'Patch Available — Deploy Now' if report.patch_status.available | bool else 'No Patch — Compensate and Monitor' }}</h4>
+    <p>{{ report.ai_analysis.patch_strategy.recommendation }}</p>
+    <p style="margin-top:0.5rem; color: var(--warn);">Exposure window: {{ report.ai_analysis.patch_strategy.estimated_exposure_window }}</p>
+  </div>
+
+  <div style="margin-top:1.5rem; font-size:0.85rem; color: var(--text-secondary);">
+    <strong style="color: var(--ai);">Recommended workflow:</strong> {{ report.recommended_workflow }}
+  </div>
+
+  <footer>
+    <span>NVD + Red Hat Security Data + AI Analysis &nbsp;|&nbsp; {{ report.cve_id }}</span>
+    <span class="powered">AI-Powered Triage</span>
+  </footer>
+</div>
+</body>
+</html>

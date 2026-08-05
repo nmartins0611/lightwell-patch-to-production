@@ -1,0 +1,327 @@
+---
+# Demo Step 0: AI-Powered CVE Triage
+#
+# Queries NVD and Red Hat Security Data APIs for CVE intelligence,
+# checks patch availability, and generates an AI triage assessment
+# with risk scoring and remediation recommendations.
+#
+# The AI analysis is structured as a swappable module — replace the
+# mock task with a real Anthropic/Claude API call when ready.
+#
+# Triggered by: EDA (first step after CVE disclosure event)
+
+- name: "CVE Triage — Intelligence Gathering + AI Analysis"
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars_files:
+    - ../vars/vault.yml
+  vars:
+    cve_id: "{{ demo_cve_id }}"
+    cvss_vector: "{{ demo_cvss_vector }}"
+    cwe_ids: "{{ demo_cwe_ids }}"
+    affected_package: "{{ demo_cve_package }}"
+
+  tasks:
+
+    ###########################################################################
+    # PHASE 1: Query public CVE intelligence sources
+    ###########################################################################
+
+    - name: Query NVD for CVE details
+      ansible.builtin.uri:
+        url: "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={{ cve_id }}"
+        method: GET
+        headers:
+          Accept: "application/json"
+        status_code: [200, 403, 404]
+        timeout: 15
+        validate_certs: true
+      register: nvd_response
+      ignore_errors: true
+
+    - name: Query Red Hat Security Data API
+      ansible.builtin.uri:
+        url: "https://access.redhat.com/hydra/rest/securitydata/cve/{{ cve_id }}.json"
+        method: GET
+        headers:
+          Accept: "application/json"
+        status_code: [200, 404]
+        timeout: 15
+        validate_certs: true
+      register: rh_response
+      ignore_errors: true
+
+    - name: Check Red Hat for existing errata/patch
+      ansible.builtin.uri:
+        url: "https://access.redhat.com/hydra/rest/securitydata/cve/{{ cve_id }}.json"
+        method: GET
+        headers:
+          Accept: "application/json"
+        status_code: [200, 404]
+        timeout: 15
+        validate_certs: true
+      register: rh_errata_check
+      ignore_errors: true
+
+    ###########################################################################
+    # PHASE 2: Extract and normalise intelligence
+    ###########################################################################
+
+    - name: Extract NVD data (or use demo defaults)
+      ansible.builtin.set_fact:
+        nvd_available: "{{ nvd_response.status | default(0) == 200 and nvd_response.json.vulnerabilities | default([]) | length > 0 }}"
+
+    - name: Build CVE intelligence from NVD
+      ansible.builtin.set_fact:
+        cve_intel:
+          cve_id: "{{ cve_id }}"
+          source: "{{ 'NVD' if nvd_available | bool else 'Demo Data' }}"
+          description: >-
+            {{ (nvd_response.json.vulnerabilities[0].cve.descriptions
+                | selectattr('lang', 'equalto', 'en')
+                | map(attribute='value') | first)
+               if nvd_available | bool
+               else 'Remote code execution vulnerability in ' ~ affected_package ~ ' due to buffer overflow in X.509 certificate parsing. An unauthenticated attacker can trigger the overflow by sending a specially crafted certificate during TLS handshake.' }}
+          cvss_vector: "{{ cvss_vector }}"
+          cvss_score: 10.0
+          cvss_severity: "CRITICAL"
+          cwe_ids: "{{ cwe_ids }}"
+          affected_package: "{{ affected_package }}"
+          published_date: "{{ nvd_response.json.vulnerabilities[0].cve.published | default('2026-07-30T08:00:00Z') if nvd_available | bool else '2026-07-30T08:00:00Z' }}"
+
+    - name: Determine patch availability
+      ansible.builtin.set_fact:
+        patch_status:
+          available: "{{ rh_errata_check.status | default(0) == 200 and (rh_errata_check.json.affected_release | default([]) | length > 0) }}"
+          advisory_id: >-
+            {{ rh_errata_check.json.affected_release[0].advisory
+               if (rh_errata_check.status | default(0) == 200 and rh_errata_check.json.affected_release | default([]) | length > 0)
+               else 'None — no RHSA published yet' }}
+          source: "{{ 'Red Hat Security Data API' if rh_errata_check.status | default(0) == 200 else 'Demo Data' }}"
+
+    - name: Display intelligence gathered
+      ansible.builtin.debug:
+        msg: >-
+          Intelligence: {{ cve_intel.source }} |
+          CVSS {{ cve_intel.cvss_score }} ({{ cve_intel.cvss_severity }}) |
+          Patch: {{ patch_status.advisory_id }}
+
+    ###########################################################################
+    # PHASE 3: AI Triage Analysis (mock — swap for real Claude API call)
+    ###########################################################################
+
+    # ┌─────────────────────────────────────────────────────────────────┐
+    # │ TO USE REAL CLAUDE API:                                        │
+    # │                                                                │
+    # │ Replace the mock task below with:                              │
+    # │                                                                │
+    # │ - name: AI triage via Claude API                               │
+    # │   ansible.builtin.uri:                                         │
+    # │     url: "https://api.anthropic.com/v1/messages"               │
+    # │     method: POST                                               │
+    # │     headers:                                                   │
+    # │       x-api-key: "{{ vault_anthropic_api_key }}"               │
+    # │       anthropic-version: "2023-06-01"                          │
+    # │       Content-Type: "application/json"                         │
+    # │     body_format: json                                          │
+    # │     body:                                                      │
+    # │       model: "claude-sonnet-4-20250514"                        │
+    # │       max_tokens: 2048                                         │
+    # │       messages:                                                │
+    # │         - role: user                                           │
+    # │           content: "{{ ai_prompt }}"                           │
+    # │   register: claude_response                                    │
+    # │                                                                │
+    # │ Then parse: claude_response.json.content[0].text               │
+    # └─────────────────────────────────────────────────────────────────┘
+
+    - name: Build AI prompt context
+      ansible.builtin.set_fact:
+        ai_prompt: |
+          You are a senior security analyst performing CVE triage for an enterprise Linux fleet.
+
+          CVE: {{ cve_intel.cve_id }}
+          CVSS Score: {{ cve_intel.cvss_score }} ({{ cve_intel.cvss_severity }})
+          CVSS Vector: {{ cve_intel.cvss_vector }}
+          CWE: {{ cve_intel.cwe_ids | join(', ') }}
+          Affected Package: {{ cve_intel.affected_package }}
+          Description: {{ cve_intel.description }}
+          Patch Available: {{ patch_status.available }}
+          Advisory: {{ patch_status.advisory_id }}
+          Fleet Size: {{ groups['targets'] | length }} RHEL hosts (production + staging)
+          Internet-facing: Yes
+
+          Provide:
+          1. RISK ASSESSMENT — exploitation likelihood, business impact, urgency
+          2. ATTACK SURFACE — how this CVE could be exploited in this environment
+          3. IMMEDIATE ACTIONS — what to do right now (ordered by priority)
+          4. COMPENSATING CONTROLS — if no patch, what mitigations reduce risk
+          5. PATCH STRATEGY — when/how to patch once available
+
+    - name: AI triage analysis (mock response for demo)
+      ansible.builtin.set_fact:
+        ai_analysis:
+          model: "claude-sonnet-4 (demo mock)"
+          risk_assessment:
+            exploitation_likelihood: "HIGH"
+            business_impact: "CRITICAL"
+            urgency: "IMMEDIATE"
+            summary: >-
+              This CVE scores 10.0 CRITICAL with network-accessible attack vector,
+              no authentication required, and scope change — meaning a compromised
+              component can impact resources beyond its security scope. The buffer
+              overflow in X.509 certificate parsing is remotely triggerable during
+              TLS handshake without user interaction. With {{ groups['targets'] | length }}
+              internet-facing hosts running the vulnerable package, exploitation
+              could lead to full remote code execution across the fleet.
+          attack_surface: >-
+            The vulnerability exists in the cryptography library's X.509 certificate
+            parser. Any service accepting TLS connections (HTTPS, LDAPS, SMTPS) is
+            a potential entry point. An attacker can craft a malicious certificate
+            that triggers a heap buffer overflow during handshake processing,
+            bypassing authentication entirely. The Changed scope (S:C) means
+            successful exploitation can pivot to other components.
+          immediate_actions:
+            - priority: 1
+              action: "Run SBOM correlation to identify all affected hosts"
+              tool: "RHTPA + AAP"
+            - priority: 2
+              action: "Apply compensating controls (network restrictions, enhanced monitoring)"
+              tool: "CME + AAP"
+            - priority: 3
+              action: "Verify compensating controls reduce effective CVSS"
+              tool: "CME MCP + AAP"
+            - priority: 4
+              action: "Monitor for exploitation indicators in SIEM"
+              tool: "Splunk"
+            - priority: 5
+              action: "Patch immediately when RHSA becomes available"
+              tool: "Lightwell + AAP"
+          compensating_controls:
+            - control: "Restrict TLS-accepting services to trusted networks only"
+              effectiveness: "Reduces Attack Vector from Network to Adjacent"
+              cme_mapping: "CME-401, CME-402"
+            - control: "Enable SELinux enforcing with strict policy"
+              effectiveness: "Limits post-exploitation lateral movement"
+              cme_mapping: "CME-101, CME-102"
+            - control: "Deploy audit rules for cryptography library access"
+              effectiveness: "Provides detection capability for exploitation attempts"
+              cme_mapping: "CME-301, CME-302"
+            - control: "Rate-limit inbound TLS connections"
+              effectiveness: "Slows brute-force exploitation attempts"
+              cme_mapping: "CME-501"
+          patch_strategy:
+            recommendation: >-
+              No patch available yet. Apply compensating controls immediately.
+              When RHSA is published, use staged deployment — test in container first,
+              then roll to staging, verify, and finally production with health checks.
+              Remove compensating controls only after patch verification completes.
+            estimated_exposure_window: "Until Lightwell resolves upstream and RHSA is published"
+
+    - name: Display AI triage summary
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════
+                    AI CVE TRIAGE — {{ cve_intel.cve_id }}
+          ═══════════════════════════════════════════════════════════
+           Model:       {{ ai_analysis.model }}
+           Risk:        {{ ai_analysis.risk_assessment.exploitation_likelihood }} exploitation / {{ ai_analysis.risk_assessment.business_impact }} impact
+           Urgency:     {{ ai_analysis.risk_assessment.urgency }}
+           Patch:       {{ patch_status.advisory_id }}
+          ───────────────────────────────────────────────────────────
+           IMMEDIATE ACTIONS:
+          {% for action in ai_analysis.immediate_actions %}
+             {{ action.priority }}. {{ action.action }} [{{ action.tool }}]
+          {% endfor %}
+          ───────────────────────────────────────────────────────────
+           COMPENSATING CONTROLS:
+          {% for ctrl in ai_analysis.compensating_controls %}
+             • {{ ctrl.control }} ({{ ctrl.cme_mapping }})
+          {% endfor %}
+          ═══════════════════════════════════════════════════════════
+
+    ###########################################################################
+    # PHASE 4: Build triage report
+    ###########################################################################
+
+    - name: Build triage report
+      ansible.builtin.set_fact:
+        triage_report:
+          cve_id: "{{ cve_intel.cve_id }}"
+          report_type: "ai_triage"
+          intelligence:
+            source: "{{ cve_intel.source }}"
+            description: "{{ cve_intel.description }}"
+            cvss_vector: "{{ cve_intel.cvss_vector }}"
+            cvss_score: "{{ cve_intel.cvss_score }}"
+            cvss_severity: "{{ cve_intel.cvss_severity }}"
+            cwe_ids: "{{ cve_intel.cwe_ids }}"
+            affected_package: "{{ cve_intel.affected_package }}"
+            published_date: "{{ cve_intel.published_date }}"
+          patch_status: "{{ patch_status }}"
+          ai_analysis: "{{ ai_analysis }}"
+          fleet_size: "{{ groups['targets'] | length }}"
+          internet_facing: true
+          recommended_workflow: >-
+            {{ 'Patch immediately — RHSA available'
+               if patch_status.available | bool
+               else 'Apply compensating controls while waiting for fix' }}
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Ensure report directory exists
+      ansible.builtin.file:
+        path: "{{ report_output_dir }}"
+        state: directory
+        mode: "0750"
+
+    - name: Write triage report (JSON)
+      ansible.builtin.copy:
+        content: "{{ triage_report | to_nice_json }}"
+        dest: "{{ report_output_dir }}/triage-report-{{ cve_id }}.json"
+        mode: "0644"
+
+    - name: Write triage report (HTML)
+      ansible.builtin.template:
+        src: ../templates/triage_report.html.j2
+        dest: "{{ report_output_dir }}/triage-report-{{ cve_id }}.html"
+        mode: "0644"
+      vars:
+        report: "{{ triage_report }}"
+
+- name: "Publish Triage Report to Report Server"
+  hosts: builders
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../vars/vault.yml
+  vars:
+    cve_id: "{{ demo_cve_id }}"
+
+  tasks:
+    - name: Ensure report web directory exists
+      ansible.builtin.file:
+        path: "{{ report_web_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Publish triage report (JSON)
+      ansible.builtin.copy:
+        content: "{{ hostvars['localhost']['triage_report'] | to_nice_json }}"
+        dest: "{{ report_web_dir }}/triage-report-{{ cve_id }}.json"
+        mode: "0644"
+
+    - name: Publish triage report (HTML)
+      ansible.builtin.template:
+        src: ../templates/triage_report.html.j2
+        dest: "{{ report_web_dir }}/triage-report-{{ cve_id }}.html"
+        mode: "0644"
+      vars:
+        report: "{{ hostvars['localhost']['triage_report'] }}"
+
+    - name: Reports published
+      ansible.builtin.debug:
+        msg: >-
+          Triage reports available at
+          {{ report_server_url }}/triage-report-{{ cve_id }}.html (HTML)
+          {{ report_server_url }}/triage-report-{{ cve_id }}.json (JSON)
