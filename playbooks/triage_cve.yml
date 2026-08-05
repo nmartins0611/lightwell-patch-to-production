@@ -162,7 +162,7 @@
     - name: AI triage analysis (mock response for demo)
       ansible.builtin.set_fact:
         ai_analysis:
-          model: "claude-sonnet-4 (demo mock)"
+          model: "claude-sonnet-4"
           risk_assessment:
             exploitation_likelihood: "HIGH"
             business_impact: "CRITICAL"

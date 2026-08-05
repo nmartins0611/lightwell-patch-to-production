@@ -76,9 +76,9 @@
     - name: Run post-patch SBOM scan (refresh for RHTPA)
       ansible.builtin.command:
         cmd: >-
-          syft packages dir:/ --output cyclonedx-json
-          --file {{ sbom_output_dir }}/{{ inventory_hostname }}-sbom-postpatch.json
-          --exclude /proc --exclude /sys --exclude /dev
+          syft scan dir:/usr/lib64/python3.9
+          --source-name {{ ansible_host }}
+          --output cyclonedx-json={{ sbom_output_dir }}/{{ inventory_hostname }}-sbom-postpatch.json
       changed_when: true
 
     - name: Fetch post-patch SBOM

@@ -31,7 +31,7 @@
       #   once_within: 5 minutes
       action:
         run_workflow_template:
-          name: "Demo — SBOM Correlate and Mitigate"
+          name: "SBOM Correlate and Mitigate"
           organization: "Default"
           job_args:
             extra_vars:

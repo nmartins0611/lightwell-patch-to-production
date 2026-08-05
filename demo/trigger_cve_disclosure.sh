@@ -31,4 +31,4 @@ curl -s -X POST "http://${EDA_HOST}:${EDA_PORT}/endpoint" \
 
 echo ""
 echo "Event fired. Check EDA UI for rule activation."
-echo "Expected: Workflow 'Demo — SBOM Correlate and Mitigate' should launch."
+echo "Expected: Workflow 'SBOM Correlate and Mitigate' should launch."

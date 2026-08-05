@@ -102,7 +102,7 @@
 
     - name: Create JT — SBOM Scan and Upload
       ansible.controller.job_template:
-        name: "Demo — SBOM Scan and Upload"
+        name: "SBOM Scan and Upload"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/sbom_scan_upload.yml"
@@ -116,7 +116,7 @@
 
     - name: Create JT — CVE Correlation
       ansible.controller.job_template:
-        name: "Demo — CVE Correlation"
+        name: "CVE Correlation"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/correlate_cve.yml"
@@ -130,7 +130,7 @@
 
     - name: Create JT — AI CVE Triage
       ansible.controller.job_template:
-        name: "Demo — AI CVE Triage"
+        name: "AI CVE Triage"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/triage_cve.yml"
@@ -144,7 +144,7 @@
 
     - name: Create JT — CME Mitigate
       ansible.controller.job_template:
-        name: "Demo — CME Mitigate"
+        name: "CME Mitigate"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/cme_mitigate.yml"
@@ -160,7 +160,7 @@
 
     - name: Create JT — CME Verify
       ansible.controller.job_template:
-        name: "Demo — CME Verify"
+        name: "CME Verify"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/cme_verify.yml"
@@ -176,7 +176,7 @@
 
     - name: Create JT — Container Test
       ansible.controller.job_template:
-        name: "Demo — Container Test"
+        name: "Container Test"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/container_test.yml"
@@ -191,7 +191,7 @@
 
     - name: Create JT — Patch and Verify
       ansible.controller.job_template:
-        name: "Demo — Patch and Verify"
+        name: "Patch and Verify"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/patch_and_verify.yml"
@@ -206,7 +206,7 @@
 
     - name: Create JT — Close Loop
       ansible.controller.job_template:
-        name: "Demo — Close Loop"
+        name: "Close Loop"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/close_loop.yml"
@@ -222,7 +222,7 @@
 
     - name: Create JT — App Dependency Remediate (CI/CD)
       ansible.controller.job_template:
-        name: "Demo — App Dependency Remediate"
+        name: "App Dependency Remediate"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/app_dependency_remediate.yml"
@@ -236,7 +236,7 @@
 
     - name: Create JT — App GitOps Remediate
       ansible.controller.job_template:
-        name: "Demo — App GitOps Remediate"
+        name: "App GitOps Remediate"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/app_gitops_remediate.yml"
@@ -250,7 +250,7 @@
 
     - name: Create JT — App Container Rebuild
       ansible.controller.job_template:
-        name: "Demo — App Container Rebuild"
+        name: "App Container Rebuild"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "playbooks/app_container_rebuild.yml"
@@ -265,7 +265,7 @@
 
     - name: Create JT — Reset Demo
       ansible.controller.job_template:
-        name: "Demo — Reset"
+        name: "Reset"
         organization: "{{ demo_org }}"
         project: "{{ demo_project }}"
         playbook: "setup/reset_demo.yml"
@@ -281,7 +281,7 @@
 
     - name: Create Workflow — SBOM Correlate and Mitigate (Demo 1+2)
       ansible.controller.workflow_job_template:
-        name: "Demo — SBOM Correlate and Mitigate"
+        name: "SBOM Correlate and Mitigate"
         organization: "{{ demo_org }}"
         inventory: "{{ demo_inventory }}"
         ask_variables_on_launch: true
@@ -291,7 +291,7 @@
 
     - name: Create Workflow — Patch Test and Deploy (Demo 3)
       ansible.controller.workflow_job_template:
-        name: "Demo — Patch Test and Deploy"
+        name: "Patch Test and Deploy"
         organization: "{{ demo_org }}"
         inventory: "{{ demo_inventory }}"
         ask_variables_on_launch: true
@@ -303,18 +303,18 @@
 
     - name: "Workflow 1 Node: CVE Correlation"
       ansible.controller.workflow_job_template_node:
-        workflow_job_template: "Demo — SBOM Correlate and Mitigate"
+        workflow_job_template: "SBOM Correlate and Mitigate"
         identifier: "correlate"
-        unified_job_template: "Demo — CVE Correlation"
+        unified_job_template: "CVE Correlation"
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
 
     - name: "Workflow 1 Node: AI Triage (on success)"
       ansible.controller.workflow_job_template_node:
-        workflow_job_template: "Demo — SBOM Correlate and Mitigate"
+        workflow_job_template: "SBOM Correlate and Mitigate"
         identifier: "triage"
-        unified_job_template: "Demo — AI CVE Triage"
+        unified_job_template: "AI CVE Triage"
         success_nodes:
           - "correlate"
         controller_host: "{{ controller_host }}"
@@ -323,9 +323,9 @@
 
     - name: "Workflow 1 Node: CME Mitigate (on success)"
       ansible.controller.workflow_job_template_node:
-        workflow_job_template: "Demo — SBOM Correlate and Mitigate"
+        workflow_job_template: "SBOM Correlate and Mitigate"
         identifier: "mitigate"
-        unified_job_template: "Demo — CME Mitigate"
+        unified_job_template: "CME Mitigate"
         success_nodes:
           - "triage"
         controller_host: "{{ controller_host }}"
@@ -334,9 +334,9 @@
 
     - name: "Workflow 1 Node: CME Verify (on success)"
       ansible.controller.workflow_job_template_node:
-        workflow_job_template: "Demo — SBOM Correlate and Mitigate"
+        workflow_job_template: "SBOM Correlate and Mitigate"
         identifier: "verify"
-        unified_job_template: "Demo — CME Verify"
+        unified_job_template: "CME Verify"
         success_nodes:
           - "mitigate"
         controller_host: "{{ controller_host }}"
@@ -347,18 +347,18 @@
 
     - name: "Workflow 2 Node: Container Test"
       ansible.controller.workflow_job_template_node:
-        workflow_job_template: "Demo — Patch Test and Deploy"
+        workflow_job_template: "Patch Test and Deploy"
         identifier: "container_test"
-        unified_job_template: "Demo — Container Test"
+        unified_job_template: "Container Test"
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
 
     - name: "Workflow 2 Node: Patch VMs (on success)"
       ansible.controller.workflow_job_template_node:
-        workflow_job_template: "Demo — Patch Test and Deploy"
+        workflow_job_template: "Patch Test and Deploy"
         identifier: "patch"
-        unified_job_template: "Demo — Patch and Verify"
+        unified_job_template: "Patch and Verify"
         success_nodes:
           - "container_test"
         controller_host: "{{ controller_host }}"
@@ -367,9 +367,9 @@
 
     - name: "Workflow 2 Node: Close Loop (on success)"
       ansible.controller.workflow_job_template_node:
-        workflow_job_template: "Demo — Patch Test and Deploy"
+        workflow_job_template: "Patch Test and Deploy"
         identifier: "close_loop"
-        unified_job_template: "Demo — Close Loop"
+        unified_job_template: "Close Loop"
         success_nodes:
           - "patch"
         controller_host: "{{ controller_host }}"
@@ -380,7 +380,7 @@
 
     - name: Create Workflow — App Dependency Remediate
       ansible.controller.workflow_job_template:
-        name: "Demo — App Dependency Remediate"
+        name: "App Dependency Remediate"
         organization: "{{ demo_org }}"
         inventory: "{{ demo_inventory }}"
         ask_variables_on_launch: true
@@ -390,9 +390,9 @@
 
     - name: "Workflow 3 Node: CI/CD Remediate"
       ansible.controller.workflow_job_template_node:
-        workflow_job_template: "Demo — App Dependency Remediate"
+        workflow_job_template: "App Dependency Remediate"
         identifier: "app_cicd_remediate"
-        unified_job_template: "Demo — App Dependency Remediate"
+        unified_job_template: "App Dependency Remediate"
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
@@ -401,7 +401,7 @@
 
     - name: Create Workflow — App GitOps Remediate
       ansible.controller.workflow_job_template:
-        name: "Demo — App GitOps Remediate"
+        name: "App GitOps Remediate"
         organization: "{{ demo_org }}"
         inventory: "{{ demo_inventory }}"
         ask_variables_on_launch: true
@@ -411,9 +411,9 @@
 
     - name: "Workflow 4 Node: GitOps Remediate"
       ansible.controller.workflow_job_template_node:
-        workflow_job_template: "Demo — App GitOps Remediate"
+        workflow_job_template: "App GitOps Remediate"
         identifier: "app_gitops_remediate"
-        unified_job_template: "Demo — App GitOps Remediate"
+        unified_job_template: "App GitOps Remediate"
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"

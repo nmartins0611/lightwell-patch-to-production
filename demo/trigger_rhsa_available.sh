@@ -32,4 +32,4 @@ curl -s -X POST "http://${EDA_HOST}:${EDA_PORT}/endpoint" \
 
 echo ""
 echo "Event fired. Check EDA UI for rule activation."
-echo "Expected: Workflow 'Demo — Patch Test and Deploy' should launch."
+echo "Expected: Workflow 'Patch Test and Deploy' should launch."

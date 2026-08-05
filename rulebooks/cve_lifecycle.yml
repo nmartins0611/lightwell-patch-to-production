@@ -11,7 +11,7 @@
       condition: event.payload.type == "cve_disclosure"
       action:
         run_workflow_template:
-          name: "Demo — SBOM Correlate and Mitigate"
+          name: "SBOM Correlate and Mitigate"
           organization: "Default"
           job_args:
             extra_vars:
@@ -25,7 +25,7 @@
       condition: event.payload.type == "rhsa_available"
       action:
         run_workflow_template:
-          name: "Demo — Patch Test and Deploy"
+          name: "Patch Test and Deploy"
           organization: "Default"
           job_args:
             extra_vars:
@@ -38,7 +38,7 @@
       condition: event.payload.type == "app_dependency_fix"
       action:
         run_workflow_template:
-          name: "Demo — App Dependency Remediate"
+          name: "App Dependency Remediate"
           organization: "Default"
           job_args:
             extra_vars:
@@ -53,7 +53,7 @@
       condition: event.payload.type == "app_dependency_fix_gitops"
       action:
         run_workflow_template:
-          name: "Demo — App GitOps Remediate"
+          name: "App GitOps Remediate"
           organization: "Default"
           job_args:
             extra_vars:
