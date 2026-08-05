@@ -128,6 +128,20 @@
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
 
+    - name: Create JT — AI CVE Triage
+      ansible.controller.job_template:
+        name: "Demo — AI CVE Triage"
+        organization: "{{ demo_org }}"
+        project: "{{ demo_project }}"
+        playbook: "playbooks/triage_cve.yml"
+        inventory: "{{ demo_inventory }}"
+        credentials:
+          - "{{ demo_credential }}"
+        ask_variables_on_launch: true
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
     - name: Create JT — CME Mitigate
       ansible.controller.job_template:
         name: "Demo — CME Mitigate"
@@ -296,13 +310,24 @@
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
 
+    - name: "Workflow 1 Node: AI Triage (on success)"
+      ansible.controller.workflow_job_template_node:
+        workflow_job_template: "Demo — SBOM Correlate and Mitigate"
+        identifier: "triage"
+        unified_job_template: "Demo — AI CVE Triage"
+        success_nodes:
+          - "correlate"
+        controller_host: "{{ controller_host }}"
+        controller_oauthtoken: "{{ controller_oauthtoken }}"
+        validate_certs: "{{ controller_validate_certs }}"
+
     - name: "Workflow 1 Node: CME Mitigate (on success)"
       ansible.controller.workflow_job_template_node:
         workflow_job_template: "Demo — SBOM Correlate and Mitigate"
         identifier: "mitigate"
         unified_job_template: "Demo — CME Mitigate"
         success_nodes:
-          - "correlate"
+          - "triage"
         controller_host: "{{ controller_host }}"
         controller_oauthtoken: "{{ controller_oauthtoken }}"
         validate_certs: "{{ controller_validate_certs }}"
