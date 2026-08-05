@@ -25,10 +25,10 @@
         event.payload.result is defined
         and event.payload.result.cve_id is defined
         and event.payload.result.event_type == "cve_disclosure"
-      throttle:
-        group_by_attributes:
-          - event.payload.result.cve_id
-        once_within: 5 minutes
+      # throttle:
+      #   group_by_attributes:
+      #     - event.payload.result.cve_id
+      #   once_within: 5 minutes
       action:
         run_workflow_template:
           name: "Demo — SBOM Correlate and Mitigate"
