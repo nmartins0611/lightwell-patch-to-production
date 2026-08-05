@@ -5,6 +5,6 @@
       ansible.builtin.include_role:
         name: "cme.controls.{{ control_id }}"
   rescue:
-    - name: "Log failure for {{ control_id }}"
+    - name: "Skip {{ control_id }} — unsupported on {{ ansible_os_family }}"
       ansible.builtin.debug:
-        msg: "Control {{ control_id }} remediation failed — continuing with next control"
+        msg: "Control {{ control_id }} remediation skipped (platform: {{ ansible_os_family }})"

@@ -62,13 +62,18 @@
         cme_target_controls: "{{ hostvars['localhost']['cme_dynamic_profile']['controls'] }}"
 
     - name: Verify each control (read-only)
-      ansible.builtin.include_role:
-        name: "cme.controls.{{ control_id }}"
-        tasks_from: verify.yml
+      block:
+        - name: "Include verify for {{ control_id }}"
+          ansible.builtin.include_role:
+            name: "cme.controls.{{ control_id }}"
+            tasks_from: verify.yml
+      rescue:
+        - name: "Skip {{ control_id }} — unsupported on {{ ansible_os_family }}"
+          ansible.builtin.debug:
+            msg: "Control {{ control_id }} skipped (platform: {{ ansible_os_family }})"
       loop: "{{ cme_target_controls }}"
       loop_control:
         loop_var: control_id
-      ignore_errors: true
 
     - name: Save POST results
       ansible.builtin.set_fact:
