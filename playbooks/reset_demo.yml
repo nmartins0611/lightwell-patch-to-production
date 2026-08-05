@@ -150,7 +150,90 @@
         msg: "{{ inventory_hostname }} — firewall rules cleared, audit rules removed, SBOM artifacts cleaned"
 
 ###############################################################################
-# PHASE 4: CLEAR REPORTS AND RESTART CME
+# PHASE 4: WEAKEN CME CONTROLS FOR DEMO
+###############################################################################
+- name: "Reset — Weaken Controls to Show Remediation Delta"
+  hosts: targets
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: "CME-101 | Disable ASLR"
+      ansible.posix.sysctl:
+        name: kernel.randomize_va_space
+        value: "0"
+        state: present
+        reload: true
+
+    - name: "CME-108 | Expose kernel pointers"
+      ansible.posix.sysctl:
+        name: kernel.kptr_restrict
+        value: "0"
+        state: present
+        reload: true
+
+    - name: "CME-110 | Allow kexec loading"
+      ansible.posix.sysctl:
+        name: kernel.kexec_load_disabled
+        value: "0"
+        state: present
+        reload: true
+      failed_when: false
+
+    - name: "CME-118 | Disable symlink/hardlink protection"
+      ansible.posix.sysctl:
+        name: "{{ item }}"
+        value: "0"
+        state: present
+        reload: true
+      loop:
+        - fs.protected_symlinks
+        - fs.protected_hardlinks
+
+    - name: "CME-603 | Allow unprivileged BPF"
+      ansible.posix.sysctl:
+        name: kernel.unprivileged_bpf_disabled
+        value: "0"
+        state: present
+        reload: true
+      failed_when: false
+
+    - name: "CME-604 | Allow unprivileged user namespaces"
+      ansible.posix.sysctl:
+        name: user.max_user_namespaces
+        value: "65536"
+        state: present
+        reload: true
+      failed_when: false
+
+    - name: "CME-401 | Downgrade crypto policy to DEFAULT"
+      ansible.builtin.command:
+        cmd: update-crypto-policies --set DEFAULT
+      changed_when: true
+
+    - name: "CME-1101 | Stop automatic patching timer"
+      ansible.builtin.systemd:
+        name: dnf-automatic-install.timer
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Controls weakened for demo
+      ansible.builtin.debug:
+        msg: |
+          Weakened controls on {{ inventory_hostname }}:
+            CME-101:  ASLR disabled (randomize_va_space=0)
+            CME-108:  Kernel pointers exposed (kptr_restrict=0)
+            CME-110:  kexec loading allowed
+            CME-118:  Symlink/hardlink protection disabled
+            CME-401:  Crypto policy downgraded to DEFAULT
+            CME-603:  Unprivileged BPF allowed
+            CME-604:  Unprivileged user namespaces allowed
+            CME-1101: Automatic patching disabled
+          These will be remediated by CME Mitigate.
+
+###############################################################################
+# PHASE 5: CLEAR REPORTS AND RESTART CME
 ###############################################################################
 - name: "Reset — Clear Reports and Restart CME"
   hosts: builders
@@ -200,7 +283,7 @@
         msg: "Reports cleared, CME MCP server restarted"
 
 ###############################################################################
-# PHASE 5: CLEAR LOCAL REPORTS
+# PHASE 6: CLEAR LOCAL REPORTS
 ###############################################################################
 - name: "Reset — Clear Local Report Artifacts"
   hosts: localhost
@@ -227,12 +310,14 @@
            RHTPA:      All SBOMs and advisories deleted
            Controller: Dynamic inventories removed
            Targets:    Firewall and audit rules reverted
+           Controls:   8 controls weakened for demo delta
            Node2:      Reports cleared, CME MCP restarted
            Local:      Report artifacts cleaned
           ───────────────────────────────────────────────────────────
            Ready to start fresh. Next step:
-             1. Run sbom_scan_upload.yml  (scan + upload + advisory)
-             2. Run correlate_cve.yml     (CVE correlation)
-             3. Run cme_mitigate.yml      (compensating controls)
-             4. Run cme_verify.yml        (posture report + scoring)
+             1. Run SBOM Scan and Upload   (scan + upload + advisory)
+             2. Run CVE Correlation        (map CVE to inventory)
+             3. Run AI CVE Triage          (risk assessment)
+             4. Run CME Mitigate           (apply compensating controls)
+             5. Run CME Verify             (posture report + scoring)
           ═══════════════════════════════════════════════════════════
