@@ -204,13 +204,42 @@
         reload: false
       failed_when: false
 
+    - name: "CME-903 | Disable TCP syncookies"
+      ansible.posix.sysctl:
+        name: net.ipv4.tcp_syncookies
+        value: "0"
+        state: present
+        reload: false
+
     - name: "Reload sysctl (skip invalid entries)"
       ansible.builtin.shell: sysctl -p 2>/dev/null || true
       changed_when: false
 
+    - name: "CME-301 | Set SELinux to permissive"
+      ansible.builtin.command:
+        cmd: setenforce 0
+      changed_when: true
+      failed_when: false
+
+    - name: "CME-301 | Make SELinux permissive persistent (requires reboot)"
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: 'SELINUX=permissive'
+
+    - name: "CME-303 | Loosen SELinux boolean"
+      ansible.builtin.command:
+        cmd: setsebool -P httpd_can_network_connect on
+      changed_when: true
+      failed_when: false
+
     - name: "CME-401 | Downgrade crypto policy to DEFAULT"
       ansible.builtin.command:
         cmd: update-crypto-policies --set DEFAULT
+      changed_when: true
+
+    - name: "CME-1002 | Disable auditd"
+      ansible.builtin.shell: auditctl -e 0 2>/dev/null || true
       changed_when: true
 
     - name: "CME-1101 | Stop automatic patching timer"
@@ -220,16 +249,32 @@
         enabled: false
       failed_when: false
 
+    - name: "CME-104 | Disable KASLR (requires reboot)"
+      ansible.builtin.command:
+        cmd: grubby --update-kernel=ALL --args="nokaslr"
+      changed_when: true
+      failed_when: false
+
+    - name: Reboot to apply kernel-level changes
+      ansible.builtin.reboot:
+        reboot_timeout: 300
+        msg: "Rebooting for demo reset — weakening kernel controls"
+
     - name: Controls weakened for demo
       ansible.builtin.debug:
         msg: |
           Weakened controls on {{ inventory_hostname }}:
             CME-101:  ASLR disabled (randomize_va_space=0)
+            CME-104:  KASLR disabled (nokaslr boot param)
             CME-108:  Kernel pointers exposed (kptr_restrict=0)
             CME-118:  Symlink/hardlink protection disabled
+            CME-301:  SELinux set to permissive
+            CME-303:  SELinux booleans loosened
             CME-401:  Crypto policy downgraded to DEFAULT
             CME-603:  Unprivileged BPF allowed
             CME-604:  Unprivileged user namespaces allowed
+            CME-903:  TCP syncookies disabled
+            CME-1002: Audit subsystem disabled
             CME-1101: Automatic patching disabled
           These will be remediated by CME Mitigate.
 
@@ -311,7 +356,7 @@
            RHTPA:      All SBOMs and advisories deleted
            Controller: Dynamic inventories removed
            Targets:    Firewall and audit rules reverted
-           Controls:   7 controls weakened for demo delta
+           Controls:   12 controls weakened for demo delta
            Node2:      Reports cleared, CME MCP restarted
            Local:      Report artifacts cleaned
           ───────────────────────────────────────────────────────────
