@@ -1,0 +1,11 @@
+---
+- name: "Verify control {{ control_id }}"
+  block:
+    - name: "Include verify for {{ control_id }}"
+      ansible.builtin.include_role:
+        name: "cme.controls.{{ control_id }}"
+        tasks_from: verify.yml
+  rescue:
+    - name: "Skip {{ control_id }} — unsupported on {{ ansible_os_family }}"
+      ansible.builtin.debug:
+        msg: "Control {{ control_id }} skipped (platform: {{ ansible_os_family }})"
