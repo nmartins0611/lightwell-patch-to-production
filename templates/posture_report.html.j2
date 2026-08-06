@@ -217,7 +217,11 @@
 {% set post_attenuation = report.post_remediation.attenuation | default([]) %}
 {% set pre_sim = report.pre_remediation.simulation | default({}) %}
 {% set post_sim = report.post_remediation.simulation | default({}) %}
-{% set score_color = '--pass-light' if post_rate >= 50 else ('--warn' if post_rate >= 25 else '--fail-light') %}
+{% set base_score = post_sim.original.score | default(10.0) | float %}
+{% set post_score = post_sim.modified.score | default(base_score) | float %}
+{% set pre_score = pre_sim.modified.score | default(base_score) | float %}
+{% set score_pct = ((base_score - post_score) / base_score * 100) if base_score > 0 else 0 %}
+{% set score_color = '--pass-light' if post_score <= 4.0 else ('--warn' if post_score <= 7.0 else '--fail-light') %}
 
   <div class="score-hero">
     <div class="score-ring">
@@ -226,12 +230,12 @@
         <circle class="ring-fill" cx="70" cy="70" r="58"
           stroke="var({{ score_color }})"
           stroke-dasharray="364.4"
-          stroke-dashoffset="{{ 364.4 - (364.4 * post_rate / 100) }}">
+          stroke-dashoffset="{{ 364.4 - (364.4 * score_pct / 100) }}">
         </circle>
       </svg>
       <div class="score-label">
-        <div class="score-number" style="color: var({{ score_color }})">{{ '%0.0f' | format(post_rate) }}</div>
-        <div class="score-unit">Post Score</div>
+        <div class="score-number" style="color: var({{ score_color }})">{{ '%0.1f' | format(post_score) }}</div>
+        <div class="score-unit">CVSS Modified</div>
       </div>
     </div>
     <div class="score-details">
